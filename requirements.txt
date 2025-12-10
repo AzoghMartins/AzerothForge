@@ -1,0 +1,14 @@
+# GUI Framework
+PySide6==6.8.0
+PySide6-Essentials==6.8.0
+
+# Database & Networking
+mysql-connector-python>=9.1.0
+requests>=2.32.0
+
+# Data Parsing (for DBC files if we need binary reading)
+construct>=2.10.0
+
+# Development Tools (Optional but recommended for AI)
+black
+pylint
