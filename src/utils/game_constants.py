@@ -68,3 +68,14 @@ PROGRESSION_TIERS = {
     16: "Defeat the Lich King",
     17: "Defeat Halion"
 }
+
+ITEM_QUALITY_COLORS = {
+    0: "#9d9d9d",  # Poor
+    1: "#ffffff",  # Common
+    2: "#1eff00",  # Uncommon
+    3: "#0070dd",  # Rare
+    4: "#a335ee",  # Epic
+    5: "#ff8000",  # Legendary
+    6: "#e6cc80",  # Artifact
+    7: "#e6cc80"   # Heirloom
+}

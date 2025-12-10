@@ -79,7 +79,7 @@ class MainWindow(QMainWindow):
         self.npc_tab = NpcTab()
         self.tabs.addTab(self.npc_tab, "NPCs")
         
-        self.item_tab = ItemTab()
+        self.item_tab = ItemTab(self.config_manager)
         self.tabs.addTab(self.item_tab, "Items")
         
         self.quest_tab = QuestTab()
