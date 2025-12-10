@@ -1,0 +1,27 @@
+{
+    "realms": [
+        {
+            "id": 1,
+            "name": "Kardinal WoW",
+            "game_port": 8085,
+            "service_name": "azeroth-worldserver.service",
+            "soap_port": 7877,
+            "soap_user": "Azogh",
+            "soap_pass": "Ulack666",
+            "db_world_name": "acore_world",
+            "db_chars_name": "acore_characters",
+            "playerbots_enabled": true,
+            "bot_prefix": "RNDBOT"
+        }
+    ],
+    "active_realm_index": 0,
+    "auth_database": {
+        "host": "localhost",
+        "port": 3306,
+        "user": "acore",
+        "password": "acore",
+        "db_name": "acore_auth"
+    },
+    "auth_service_name": "azeroth-authserver.service",
+    "client_data_path": "/media/azoghmartins/Production/FTP/_GAMES/WoW Client/dbc"
+}
