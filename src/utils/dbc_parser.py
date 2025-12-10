@@ -110,3 +110,37 @@ class DBCParser:
                 results[c_id] = model_id
                 
         return results
+
+    def read_map_dbc(self, file_path) -> dict:
+        """
+        Reads Map.dbc and returns {id: name}.
+        Assumes Field 0 = ID, Field 5 = MapName_Lang Offset (enUS).
+        Fallback to Field 1 (Directory) if needed.
+        """
+        header, records_raw, string_block = self._parse_file(file_path)
+        if not header:
+            return {}
+
+        Record = Array(header.field_count, Int32ul)
+        Records = Array(header.record_count, Record)
+        
+        try:
+            parsed_records = Records.parse(records_raw)
+        except Exception as e:
+            print(f"Error parsing records in {file_path}: {e}")
+            return {}
+
+        results = {}
+        for row in parsed_records:
+            if len(row) > 5:
+                m_id = row[0]
+                name_offset = row[5] # MapName_Lang
+                name = self._get_string(name_offset, string_block)
+                if not name and len(row) > 1:
+                    # Fallback to Directory
+                    dir_offset = row[1]
+                    name = self._get_string(dir_offset, string_block)
+                
+                results[m_id] = name
+                
+        return results

@@ -20,6 +20,7 @@ class DataManager:
         
         self.factions = {}
         self.display_infos = {}
+        self.maps = {}
         
         # Load immediately or wait?
         # User says "Method load_data()... Check client_data_path... If valid parse..."
@@ -59,3 +60,17 @@ class DataManager:
                 print(f"ERROR: Failed to parse CreatureDisplayInfo.dbc: {e}")
         else:
             print(f"DEBUG: CreatureDisplayInfo.dbc not found at {cdi_path}")
+
+        # Map.dbc
+        map_path = os.path.join(client_path, "Map.dbc")
+        if os.path.exists(map_path):
+            try:
+                self.maps = self.parser.read_map_dbc(map_path)
+                print(f"SUCCESS: Loaded {len(self.maps)} Maps.")
+            except Exception as e:
+                print(f"ERROR: Failed to parse Map.dbc: {e}")
+        else:
+            print(f"DEBUG: Map.dbc not found at {map_path}")
+
+    def get_map_name(self, map_id):
+        return self.maps.get(map_id, f"Unknown Map ({map_id})")

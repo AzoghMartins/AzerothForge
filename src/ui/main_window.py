@@ -73,7 +73,7 @@ class MainWindow(QMainWindow):
         self.account_tab = AccountTab(self.config_manager)
         self.tabs.addTab(self.account_tab, "Accounts")
         
-        self.character_tab = CharacterTab()
+        self.character_tab = CharacterTab(self.config_manager)
         self.tabs.addTab(self.character_tab, "Characters")
         
         self.npc_tab = NpcTab()
