@@ -24,6 +24,10 @@ class AccountTab(BaseManagerTab):
         # Initial search to populate table
         self.on_search()
 
+    def on_realm_changed(self):
+        super().on_realm_changed()
+        self.on_search()
+
     def customize_ui(self):
         self.new_btn.setVisible(False) # Registration is usually external
         

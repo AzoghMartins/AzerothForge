@@ -25,6 +25,10 @@ class ItemTab(BaseManagerTab):
         # Initial search
         self.on_search()
 
+    def on_realm_changed(self):
+        super().on_realm_changed()
+        self.on_search()
+
     def customize_ui(self):
         # Hide default buttons we don't use yet
         self.new_btn.setVisible(False)

@@ -12,6 +12,7 @@ class ConfigManager:
     DEFAULT_CONFIG = {
         "auth_service_name": "authserver",
         "client_data_path": "",
+        "wow_client_path": "",
         "auth_database": {
             "host": "localhost",
             "port": 3306,
@@ -19,6 +20,8 @@ class ConfigManager:
             "password": "acore",
             "db_name": "acore_auth"
         },
+        "playerbots_enabled": False,
+        "bot_prefix": "bot",
         "realms": [
             {
                 "id": 1,
@@ -29,9 +32,7 @@ class ConfigManager:
                 "soap_pass": "admin",
                 "game_port": 8085,
                 "db_world_name": "acore_world",
-                "db_chars_name": "acore_characters",
-                "playerbots_enabled": False,
-                "bot_prefix": "bot"
+                "db_chars_name": "acore_characters"
             }
         ],
         "active_realm_index": 0
@@ -55,8 +56,14 @@ class ConfigManager:
                     loaded["auth_service_name"] = self.DEFAULT_CONFIG["auth_service_name"]
                 if "client_data_path" not in loaded:
                     loaded["client_data_path"] = self.DEFAULT_CONFIG["client_data_path"]
+                if "wow_client_path" not in loaded:
+                    loaded["wow_client_path"] = self.DEFAULT_CONFIG["wow_client_path"]
                 if "active_realm_index" not in loaded:
                     loaded["active_realm_index"] = self.DEFAULT_CONFIG["active_realm_index"]
+                if "playerbots_enabled" not in loaded:
+                    loaded["playerbots_enabled"] = self.DEFAULT_CONFIG["playerbots_enabled"]
+                if "bot_prefix" not in loaded:
+                    loaded["bot_prefix"] = self.DEFAULT_CONFIG["bot_prefix"]
                 return loaded
         except (json.JSONDecodeError, IOError):
             print("Error loading config, using default.")
@@ -149,9 +156,7 @@ class ConfigManager:
                         "soap_user": "admin",
                         "soap_pass": "admin",
                         "db_world_name": "acore_world",
-                        "db_chars_name": "acore_characters",
-                        "playerbots_enabled": False,
-                        "bot_prefix": "bot"
+                        "db_chars_name": "acore_characters"
                     }
                     merged_realms.append(new_realm)
             

@@ -80,6 +80,16 @@ class SettingsWindow(QDialog):
         auth_layout.addRow("DB Pass:", self.db_pass_edit)
         auth_layout.addRow("Auth DB Name:", self.db_name_edit)
         
+        # Playerbots Config (Global)
+        self.bots_check = QCheckBox("Enable Playerbots Support")
+        self.bots_check.toggled.connect(self.toggle_bot_prefix)
+        
+        self.bot_prefix_edit = QLineEdit()
+        self.bot_prefix_edit.setPlaceholderText("Prefix (e.g. 'bot')")
+        
+        auth_layout.addRow(self.bots_check)
+        auth_layout.addRow("Bot Prefix:", self.bot_prefix_edit)
+        
         auth_group.setLayout(auth_layout)
         right_panel.addWidget(auth_group)
         
@@ -147,18 +157,6 @@ class SettingsWindow(QDialog):
         service_layout.addRow("SOAP User:", self.soap_user_edit)
         service_layout.addRow("SOAP Pass:", self.soap_pass_edit)
         
-        # Playerbots Config
-        self.bots_check = QCheckBox("Enable Playerbots Support")
-        self.bots_check.stateChanged.connect(self.on_realm_field_changed)
-        self.bots_check.toggled.connect(self.toggle_bot_prefix)
-        
-        self.bot_prefix_edit = QLineEdit()
-        self.bot_prefix_edit.setPlaceholderText("Prefix (e.g. 'bot')")
-        self.bot_prefix_edit.textChanged.connect(self.on_realm_field_changed)
-        
-        service_layout.addRow(self.bots_check)
-        service_layout.addRow("Bot Prefix:", self.bot_prefix_edit)
-        
         service_group.setLayout(service_layout)
         realm_main_layout.addWidget(service_group)
         
@@ -172,16 +170,29 @@ class SettingsWindow(QDialog):
         client_tab = QWidget()
         client_layout = QVBoxLayout(client_tab)
         
-        path_group = QGroupBox("Client Data Location")
-        path_layout = QHBoxLayout()
+        path_group = QGroupBox("File Paths")
+        path_layout = QFormLayout()
         
+        # 1. DBC Data Path
+        dbc_layout = QHBoxLayout()
         self.client_path_edit = QLineEdit()
-        self.client_path_edit.setPlaceholderText("/path/to/Wow/Data/enUS")
-        path_layout.addWidget(self.client_path_edit)
-        
+        self.client_path_edit.setPlaceholderText("/path/to/extracted/dbc/data")
         self.browse_btn = QPushButton("Browse...")
         self.browse_btn.clicked.connect(self.browse_client_path)
-        path_layout.addWidget(self.browse_btn)
+        dbc_layout.addWidget(self.client_path_edit)
+        dbc_layout.addWidget(self.browse_btn)
+        
+        # 2. WoW Client Path (MPQ)
+        mpq_layout = QHBoxLayout()
+        self.wow_client_path_edit = QLineEdit()
+        self.wow_client_path_edit.setPlaceholderText("/path/to/WoW/Root (containing Data/patch-3.MPQ)")
+        self.browse_mpq_btn = QPushButton("Browse...")
+        self.browse_mpq_btn.clicked.connect(self.browse_wow_client_path)
+        mpq_layout.addWidget(self.wow_client_path_edit)
+        mpq_layout.addWidget(self.browse_mpq_btn)
+
+        path_layout.addRow("DBC/Data Dir:", dbc_layout)
+        path_layout.addRow("WoW Game Root:", mpq_layout)
         
         path_group.setLayout(path_layout)
         client_layout.addWidget(path_group)
@@ -206,22 +217,38 @@ class SettingsWindow(QDialog):
         self.db_user_edit.setText(auth.get("user", "acore"))
         self.db_pass_edit.setText(auth.get("password", ""))
         self.db_name_edit.setText(auth.get("db_name", "acore_auth"))
+        
+        self.bots_check.setChecked(self.local_config.get("playerbots_enabled", False))
+        self.bot_prefix_edit.setText(self.local_config.get("bot_prefix", "bot"))
+        self.toggle_bot_prefix(self.bots_check.isChecked())
 
     def load_client_data_config(self):
         path = self.local_config.get("client_data_path", "")
         self.client_path_edit.setText(path)
+        
+        wow_path = self.local_config.get("wow_client_path", "")
+        self.wow_client_path_edit.setText(wow_path)
 
     def browse_client_path(self):
         current_path = self.client_path_edit.text()
         start_dir = current_path if current_path and os.path.isdir(current_path) else ""
         
-        path = QFileDialog.getExistingDirectory(self, "Select Client Data Directory", start_dir)
+        path = QFileDialog.getExistingDirectory(self, "Select DBC Data Directory", start_dir)
         if path:
             self.client_path_edit.setText(path)
+
+    def browse_wow_client_path(self):
+        current_path = self.wow_client_path_edit.text()
+        start_dir = current_path if current_path and os.path.isdir(current_path) else ""
+        
+        path = QFileDialog.getExistingDirectory(self, "Select WoW Game Root Directory", start_dir)
+        if path:
+            self.wow_client_path_edit.setText(path)
 
     def update_global_config_from_ui(self):
         self.local_config["auth_service_name"] = self.auth_service_edit.text()
         self.local_config["client_data_path"] = self.client_path_edit.text()
+        self.local_config["wow_client_path"] = self.wow_client_path_edit.text()
         
         self.local_config["auth_database"] = {
             "host": self.db_host_edit.text(),
@@ -230,6 +257,9 @@ class SettingsWindow(QDialog):
             "password": self.db_pass_edit.text(),
             "db_name": self.db_name_edit.text()
         }
+        
+        self.local_config["playerbots_enabled"] = self.bots_check.isChecked()
+        self.local_config["bot_prefix"] = self.bot_prefix_edit.text()
 
     def load_realms(self):
         self.realm_list.clear()
@@ -261,8 +291,6 @@ class SettingsWindow(QDialog):
         self.world_db_edit.blockSignals(True)
 
         self.chars_db_edit.blockSignals(True)
-        self.bots_check.blockSignals(True)
-        self.bot_prefix_edit.blockSignals(True)
         
         # Update details
         self.r_id_label.setText(str(realm.get("id", "-")))
@@ -279,11 +307,6 @@ class SettingsWindow(QDialog):
         self.world_db_edit.setText(realm.get("db_world_name", "acore_world"))
         self.chars_db_edit.setText(realm.get("db_chars_name", "acore_characters"))
         
-        # Playerbots
-        self.bots_check.setChecked(realm.get("playerbots_enabled", False))
-        self.bot_prefix_edit.setText(realm.get("bot_prefix", "bot"))
-        self.toggle_bot_prefix(self.bots_check.isChecked())
-        
         # Unblock
         self.name_edit.blockSignals(False)
         self.service_edit.blockSignals(False)
@@ -292,8 +315,6 @@ class SettingsWindow(QDialog):
         self.soap_pass_edit.blockSignals(False)
         self.world_db_edit.blockSignals(False)
         self.chars_db_edit.blockSignals(False)
-        self.bots_check.blockSignals(False)
-        self.bot_prefix_edit.blockSignals(False)
 
     def on_realm_field_changed(self):
         row = self.realm_list.currentRow()
@@ -308,9 +329,6 @@ class SettingsWindow(QDialog):
             
             realm["db_world_name"] = self.world_db_edit.text()
             realm["db_chars_name"] = self.chars_db_edit.text()
-            
-            realm["playerbots_enabled"] = self.bots_check.isChecked()
-            realm["bot_prefix"] = self.bot_prefix_edit.text()
             
             # Update list label if name changed
             self.realm_list.item(row).setText(f"[{realm.get('id','?')}] {realm['name']}")

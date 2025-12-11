@@ -4,11 +4,13 @@ from PySide6.QtWidgets import (QMainWindow, QTabWidget, QWidget, QVBoxLayout,
 from PySide6.QtCore import Signal
 from src.ui.dashboard import DashboardWidget, SettingsWindow
 from src.core.config_manager import ConfigManager
+from src.core.campaign_manager import CampaignManager
 from src.ui.tabs.account_tab import AccountTab
 from src.ui.tabs.character_tab import CharacterTab
 from src.ui.tabs.npc_tab import NpcTab
 from src.ui.tabs.item_tab import ItemTab
 from src.ui.tabs.quest_tab import QuestTab
+from src.ui.tabs.campaign_tab import CampaignTab
 
 class MainWindow(QMainWindow):
     realm_changed = Signal()
@@ -20,6 +22,7 @@ class MainWindow(QMainWindow):
         
         # Initialize Core Services
         self.config_manager = ConfigManager()
+        self.campaign_manager = CampaignManager(self.config_manager)
         
         # Setup Theme
         self.setup_dark_theme()
@@ -56,6 +59,21 @@ class MainWindow(QMainWindow):
             QPushButton:hover { background-color: #555; }
         """)
         top_layout.addWidget(settings_btn)
+
+        viewer_btn = QPushButton("Model Viewer")
+        viewer_btn.clicked.connect(self.open_model_viewer)
+        viewer_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3; 
+                color: white;
+                border: 1px solid #1976D2; 
+                padding: 6px 12px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #42A5F5; }
+        """)
+        top_layout.addWidget(viewer_btn)
         
         main_layout.addLayout(top_layout)
         
@@ -66,8 +84,13 @@ class MainWindow(QMainWindow):
         # Tab 1: Dashboard
         self.dashboard = DashboardWidget(self.config_manager)
         # Connect signal
+        # Connect signal
         self.realm_changed.connect(self.dashboard.on_realm_changed)
         self.tabs.addTab(self.dashboard, "Mission Control")
+        
+        # Tab 2: Campaigns
+        self.campaign_tab = CampaignTab(self.campaign_manager, self.config_manager)
+        self.tabs.addTab(self.campaign_tab, "Campaigns")
         
         # Manager Tabs
         self.account_tab = AccountTab(self.config_manager)
@@ -76,15 +99,27 @@ class MainWindow(QMainWindow):
         self.character_tab = CharacterTab(self.config_manager)
         self.tabs.addTab(self.character_tab, "Characters")
         
-        self.npc_tab = NpcTab()
+        self.npc_tab = NpcTab(self.campaign_manager)
         self.tabs.addTab(self.npc_tab, "NPCs")
         
         self.item_tab = ItemTab(self.config_manager)
         self.tabs.addTab(self.item_tab, "Items")
         
-        self.quest_tab = QuestTab()
+        self.quest_tab = QuestTab(self.campaign_manager)
         self.tabs.addTab(self.quest_tab, "Quests")
         
+        # Connect Manager Tabs to Realm Change
+        self.realm_changed.connect(self.account_tab.on_realm_changed)
+        self.realm_changed.connect(self.character_tab.on_realm_changed)
+        self.realm_changed.connect(self.item_tab.on_realm_changed)
+        # NPC and Quest Tabs use CampaignManager, which reads active realm dynamically, 
+        # but they might need refresh if displaying data? They are mostly editors.
+        # Let's add them if they have the method.
+        if hasattr(self.npc_tab, 'on_realm_changed'):
+            self.realm_changed.connect(self.npc_tab.on_realm_changed)
+        if hasattr(self.quest_tab, 'on_realm_changed'):
+            self.realm_changed.connect(self.quest_tab.on_realm_changed)
+            
         # Initialize Realm List
         self.refresh_realm_selector()
         
@@ -109,6 +144,11 @@ class MainWindow(QMainWindow):
         dialog = SettingsWindow(self.config_manager, self)
         dialog.config_saved.connect(self.on_config_saved)
         dialog.exec()
+
+    def open_model_viewer(self):
+        from src.ui.tools.model_viewer_window import ModelViewerWindow
+        self.viewer_window = ModelViewerWindow(self)
+        self.viewer_window.show()
 
     def on_config_saved(self):
         # Refresh realm list in case names/IDs changed or new realms added

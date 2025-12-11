@@ -10,9 +10,11 @@ except ImportError:
     mysql = None
 
 class CharacterSelectorDialog(QDialog):
-    def __init__(self, config_manager, parent=None):
+    def __init__(self, config_manager, parent=None, min_gm_level=0, target_realm_id=None):
         super().__init__(parent)
         self.config_manager = config_manager
+        self.min_gm_level = min_gm_level
+        self.target_realm_id = target_realm_id
         self.selected_name = None
         
         self.setWindowTitle("Select Character")
@@ -57,13 +59,22 @@ class CharacterSelectorDialog(QDialog):
     def perform_search(self):
         search_text = self.search_input.text().strip()
         
-        realm = self.config_manager.get_active_realm()
+        realm = None
+        if self.target_realm_id:
+            # Find specific realm
+            realms = self.config_manager.get_realms()
+            realm = next((r for r in realms if r["id"] == self.target_realm_id), None)
+            
+        if not realm:
+            realm = self.config_manager.get_active_realm()
+            
+        realm_id = realm.get("id", 1)
         auth_config = self.config_manager.config.get("auth_database", {})
         char_db = realm.get("db_chars_name", "acore_characters")
         
         
-        bots_enabled = realm.get("playerbots_enabled", False)
-        bot_prefix = realm.get("bot_prefix", "bot").strip()
+        bots_enabled = self.config_manager.config.get("playerbots_enabled", False)
+        bot_prefix = self.config_manager.config.get("bot_prefix", "bot").strip()
         
         if not mysql:
             return
@@ -78,14 +89,29 @@ class CharacterSelectorDialog(QDialog):
             )
             cursor = conn.cursor()
             
+            # Base Query
             query = f"""
                 SELECT c.name, c.level, c.race, c.class
                 FROM {char_db}.characters c
                 JOIN account a ON c.account = a.id
-                WHERE UPPER(c.name) LIKE %s
             """
             
-            params = [f"%{search_text.upper()}%"]
+            # Use distinct if joining account_access could cause dupes?
+            # One account can have multiple access rows (per realm).
+            # We want to join access for specific realm.
+            
+            if self.min_gm_level > 0:
+                # JOIN account_access
+                # Filter: gmlevel >= min_gm_level AND (RealmID = -1 OR RealmID = current_realm_id)
+                query += f"""
+                JOIN account_access aa ON a.id = aa.id
+                WHERE (aa.gmlevel >= %s AND (aa.RealmID = -1 OR aa.RealmID = %s))
+                AND UPPER(c.name) LIKE %s
+                """
+                params = [self.min_gm_level, realm_id, f"%{search_text.upper()}%"]
+            else:
+                query += " WHERE UPPER(c.name) LIKE %s"
+                params = [f"%{search_text.upper()}%"]
             
             if bots_enabled and bot_prefix:
                 query += " AND a.username NOT LIKE %s"

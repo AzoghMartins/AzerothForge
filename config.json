@@ -12,6 +12,19 @@
             "db_chars_name": "acore_characters",
             "playerbots_enabled": true,
             "bot_prefix": "RNDBOT"
+        },
+        {
+            "id": 2,
+            "name": "Dev Realm",
+            "game_port": 8086,
+            "service_name": "azeroth-worldserver-dev.service",
+            "soap_port": 7879,
+            "soap_user": "Azogh",
+            "soap_pass": "Ulack666",
+            "db_world_name": "acore_world_dev",
+            "db_chars_name": "acore_characters_dev",
+            "playerbots_enabled": true,
+            "bot_prefix": "RNDBOT"
         }
     ],
     "active_realm_index": 0,
@@ -23,5 +36,8 @@
         "db_name": "acore_auth"
     },
     "auth_service_name": "azeroth-authserver.service",
-    "client_data_path": "/media/azoghmartins/Production/FTP/_GAMES/WoW Client/dbc"
+    "client_data_path": "/media/azoghmartins/Production/FTP/_GAMES/WoW Client/dbc",
+    "playerbots_enabled": true,
+    "bot_prefix": "RNDBOT",
+    "wow_client_path": "/media/azoghmartins/Production/FTP/_GAMES/WoW Client"
 }

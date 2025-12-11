@@ -64,3 +64,8 @@ class BaseManagerTab(QWidget):
 
     def on_delete(self):
         print("Delete triggered (Not implemented)")
+
+    def on_realm_changed(self):
+        """Called when the active realm changes."""
+        # Default behavior: Clear table to avoid displaying stale data
+        self.table.setRowCount(0)

@@ -24,6 +24,10 @@ class CharacterTab(BaseManagerTab):
         # Initial search
         self.on_search()
 
+    def on_realm_changed(self):
+        super().on_realm_changed()
+        self.on_search()
+
     def customize_ui(self):
         self.new_btn.setVisible(False)
         
