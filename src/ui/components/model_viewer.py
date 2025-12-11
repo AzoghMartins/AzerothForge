@@ -1,4 +1,5 @@
 import sys
+import os
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 from PySide6.QtCore import Qt, QTimer
 
@@ -79,6 +80,9 @@ class Panda3DWidget(QWidget):
         if not self.ShowBase.win:
              print("Panda3D failed to open window.")
              return
+
+        # Setup Background (Black)
+        self.ShowBase.setBackgroundColor(0, 0, 0)
 
         # Setup Scene
         self.setup_lighting()
@@ -231,6 +235,26 @@ class Panda3DWidget(QWidget):
              internal_list = parser.get_internal_texture_list(m2_data)
              print(f"DEBUG: Internal M2 Textures: {internal_list}")
              if internal_list:
+                 # Heuristic to prioritize the "Main" skin
+                 # The regex finds ALL textures (particles, armor, etc).
+                 # We want the one likeliest to be the body.
+                 
+                 model_name = os.path.splitext(os.path.basename(m2_path))[0].lower()
+                 
+                 def texture_score(path):
+                     s = 0
+                     p = path.lower()
+                     if "skin" in p: s += 10
+                     if "01.blp" in p: s += 5 # Typical main texture suffix
+                     if model_name in p: s += 2
+                     if "temp" in p: s -= 1 # Deprioritize temp files
+                     return s
+                 
+                 # Sort by score descending
+                 internal_list.sort(key=texture_score, reverse=True)
+                 
+                 print(f"DEBUG: Sorted Textures: {internal_list}")
+
                  for int_tex in internal_list:
                      print(f"DEBUG: Trying internal texture: {int_tex}")
                      tex_data = mpq.read_file(int_tex)
