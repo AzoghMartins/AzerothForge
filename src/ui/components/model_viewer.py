@@ -6,7 +6,7 @@ try:
     from direct.showbase.ShowBase import ShowBase
     from panda3d.core import (WindowProperties, GeomVertexData, GeomVertexFormat, GeomVertexWriter, 
                               Geom, GeomNode, GeomPoints, GeomTriangles, NodePath, 
-                              DirectionalLight, AmbientLight, VBase4, Material)
+                              DirectionalLight, AmbientLight, VBase4, Material, Texture)
     import builtins
 
     PANDA_AVAILABLE = True
@@ -17,6 +17,7 @@ except ImportError:
 from src.core.mpq_manager import MpqManager
 from src.utils.m2_parser import M2Parser
 from src.utils.skin_parser import SkinParser
+from src.utils.blp_converter import BlpConverter
 
 class Panda3DWidget(QWidget):
     def __init__(self, parent=None):
@@ -177,7 +178,9 @@ class Panda3DWidget(QWidget):
         if self.ShowBase:
             self.ShowBase.taskMgr.step()
 
-    def load_model(self, m2_path: str):
+    def load_model(self, m2_path: str, texture_path: str = None):
+        print(f"DEBUG: load_model called. M2: {m2_path}, Texture: {texture_path}")
+
         if not self.is_initialized:
             print("Viewer not ready.")
             return
@@ -207,7 +210,80 @@ class Panda3DWidget(QWidget):
             print("No vertices found.")
             return
 
-        # 2. Read Skin File
+        # 2. Textures
+        tex_data = None
+        
+        # A. Try requested path (DBC)
+        if texture_path:
+             print(f"Loading requested texture: {texture_path}")
+             tex_data = mpq.read_file(texture_path)
+
+        # B. Try internal parsing (Type 0)
+        if not tex_data:
+             internal_tex = parser.parse_textures(m2_data)
+             if internal_tex:
+                 print(f"Loading internal texture (Type 0): {internal_tex}")
+                 tex_data = mpq.read_file(internal_tex)
+        
+        # C. Try Regex Internal Scan
+        if not tex_data:
+             print("DEBUG: Primary texture failed. Scanning M2 for internal textures...")
+             internal_list = parser.get_internal_texture_list(m2_data)
+             print(f"DEBUG: Internal M2 Textures: {internal_list}")
+             if internal_list:
+                 for int_tex in internal_list:
+                     print(f"DEBUG: Trying internal texture: {int_tex}")
+                     tex_data = mpq.read_file(int_tex)
+                     if tex_data:
+                         print(f"SUCCESS: Loaded internal texture {int_tex}")
+                         break
+
+        print(f"DEBUG: BLP Data Found: {len(tex_data) if tex_data else 'None'}")
+             
+        if tex_data:
+            converter = BlpConverter()
+            # Returns (width, height, data, format)
+            tex_info = converter.process_blp(tex_data)
+            if tex_info:
+                width, height, image_data, tex_fmt = tex_info
+                print(f"DEBUG: Texture Format: {tex_fmt} | Size: {width}x{height} | Data Len: {len(image_data)}")
+                
+                tex = Texture()
+                
+                # 1. Set Size
+                tex.setXSize(width)
+                tex.setYSize(height)
+                
+                # 2. Set Format FIRST (Defaults to CM_off, so must be before Compression)
+                tex.setFormat(Texture.F_rgba)
+                
+                # 3. Set Compression SECOND (Overrides format default for internal storage)
+                if tex_fmt == "DXT1":
+                    tex.setCompression(Texture.CM_dxt1)
+                elif tex_fmt == "DXT3":
+                    tex.setCompression(Texture.CM_dxt3)
+                elif tex_fmt == "DXT5":
+                    tex.setCompression(Texture.CM_dxt5)
+                else:
+                    tex.setCompression(Texture.CM_off)
+                    
+                # Debug Verification
+                print(f"DEBUG: Texture Compression Mode: {tex.getCompression()}")
+
+                # 4. Feed Data
+                # CRITICAL: Must pass compression mode here, otherwise it defaults to CM_off and fails assertion
+                tex.setRamImage(image_data, tex.getCompression())
+                
+                # Apply to Node (will apply after mesh generation)
+                self.pending_texture = tex
+            else:
+                print("Failed to convert BLP.")
+                self.pending_texture = None
+        else:
+            print("No Texture found (Hardcoded or DBC).")
+            self.pending_texture = None
+
+        # 3. Read Skin File
         # Try finding the corresponding skin file
         # Rules: replace .m2/M2 with 00.skin
         # M2 paths are often mixed case.
@@ -297,21 +373,30 @@ class Panda3DWidget(QWidget):
         # indices_lookup[5] = 132 -> means Skin Vertex 5 is M2 Vertex 132.
         # So we want to tell Panda to use Index 132?
         
-        # Approach A: Load all M2 vertices into Panda VData.
-        # Then create a GeomPrimitives array using: indices_lookup[triangles[i]].
-        # This is efficient because invalid/unused M2 vertices just sit there unused.
+        # Helper to unpack and render
+        # Create GeomVertexData
+        # V3n3t2 = Vertex (3), Normal (3), TexCoord (2)
+        format = GeomVertexFormat.getV3n3t2()
+        vdata = GeomVertexData('mesh', format, Geom.UHStatic)
+        vertex = GeomVertexWriter(vdata, 'vertex')
+        normal = GeomVertexWriter(vdata, 'normal')
+        texcoord = GeomVertexWriter(vdata, 'texcoord')
         
         # Add ALL vertices
         for v_data in vertices:
-            # v_data is ((x,y,z), (nx,ny,nz))
-            pos_data, norm_data = v_data
+            # v_data is ((x,y,z), (nx,ny,nz), (u,v))
+            pos_data, norm_data, uv_data = v_data
             
             x, y, z = pos_data
             nx, ny, nz = norm_data
+            u, v = uv_data
             
             # Apply Coordinate Transform: WoW (X, Y, Z) -> Panda (-Y, X, Z)
             vertex.addData3f(-y, x, z)
             normal.addData3f(-ny, nx, nz)
+            
+            # UVs
+            texcoord.addData2f(u, v) # Try raw first, maybe 1-v later if flipped
             
         # Create Primitives
         # Standard GeomTriangles
@@ -344,11 +429,16 @@ class Panda3DWidget(QWidget):
         self.model_node.setTwoSided(True) 
         self.model_node.setShaderAuto() # Enable lighting/shadows 
         
-        # Apply Default Material
         m = Material()
         m.setSpecular(VBase4(1, 1, 1, 1))
         m.setShininess(50)
         self.model_node.setMaterial(m, 1) # Override
+        
+        # Apply Texture if available
+        if getattr(self, 'pending_texture', None):
+            self.model_node.setTexture(self.pending_texture, 1)
+            # Reset color to white so texture shows fully
+            self.model_node.setColor(1, 1, 1, 1)
         
         # Center Pivot on Model
         self.zoom_to_fit()

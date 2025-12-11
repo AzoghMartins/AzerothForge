@@ -68,7 +68,17 @@ class M2Parser:
                 # Read normal (nx, ny, nz) at offset 20 (12 pos + 4 weights + 4 indices)
                 normal = struct.unpack('<3f', m2_bytes[current_offset + 20 : current_offset + 32])
                 
-                vertices.append((pos, normal))
+                # Read texture coordinates (u, v) at offset 32 (20 normal + 12 ??) -> Normal is 12 bytes. 20+12 = 32.
+                # Vertex Structure:
+                # 0x00: Pos (12)
+                # 0x0C: Weights (4)
+                # 0x10: Indices (4)
+                # 0x14: Normal (12) -> ends at 0x20 (32)
+                # 0x20: TexCoords (8) -> 2 floats
+                
+                uv = struct.unpack('<2f', m2_bytes[current_offset + 32 : current_offset + 40])
+                
+                vertices.append((pos, normal, uv))
                 
                 current_offset += stride
 
@@ -77,7 +87,7 @@ class M2Parser:
              print(f"DEBUG: First vertex: {vertices[0]}")
              # Check for NaNs manually?
              import math
-             # vertices[0] is now ((x,y,z), (nx,ny,nz))
+             # vertices[0] is now ((x,y,z), (nx,ny,nz), (u,v))
              pos_check = vertices[0][0]
              if any(math.isnan(c) for c in pos_check):
                  print("DEBUG: First vertex contains NaNs!")
@@ -85,3 +95,74 @@ class M2Parser:
              print("DEBUG: No vertices extracted.")
 
         return vertices
+
+    def parse_textures(self, m2_bytes: bytes):
+        """
+        Parses texture definitions from M2.
+        Returns the first valid Hardcoded (Type 0) Texture filename found.
+        """
+        if not m2_bytes or len(m2_bytes) < 0x60:
+            return None
+            
+        # Header Offsets (WotLK)
+        # n_textures: uint32 at 0x54
+        # ofs_textures: uint32 at 0x58
+        n_textures = struct.unpack('<I', m2_bytes[0x54:0x58])[0]
+        ofs_textures = struct.unpack('<I', m2_bytes[0x58:0x5C])[0]
+        
+        if n_textures == 0 or ofs_textures == 0:
+            return None
+            
+        current_offset = ofs_textures
+        stride = 16 # Texture definition block size
+        
+        for _ in range(n_textures):
+            if current_offset + 16 > len(m2_bytes):
+                break
+                
+            # Read Texture Def
+            tex_type = struct.unpack('<I', m2_bytes[current_offset:current_offset+4])[0]
+            tex_flags = struct.unpack('<I', m2_bytes[current_offset+4:current_offset+8])[0]
+            len_filename = struct.unpack('<I', m2_bytes[current_offset+8:current_offset+12])[0]
+            ofs_filename = struct.unpack('<I', m2_bytes[current_offset+12:current_offset+16])[0]
+            
+            # Type 0 = Hardcoded texture
+            if tex_type == 0 and len_filename > 1 and ofs_filename > 0:
+                # Read Filename
+                try:
+                    # Strings in M2 are NOT necessarily null-terminated in the block, 
+                    # but 'len_filename' includes null terminator usually? Or just length.
+                    # We read len_filename bytes.
+                    if raw_name:
+                        # Try decoding cleanly, fallback to ascii/replace
+                        name = raw_name.decode('utf-8', errors='ignore').split('\x00')[0]
+                        if name:
+                            return name
+                except Exception as e:
+                    pass # Silently ignore bad strings to avoid spam
+            
+            current_offset += stride
+            
+        return None
+
+    def get_internal_texture_list(self, m2_bytes: bytes) -> list:
+        """
+        Scans the binary for any string ending in .blp.
+        This is a 'dirty' method to find textures when standard parsing fails.
+        """
+        import re
+        results = []
+        # Regex for valid filenames ending in .blp
+        # Looking for sequence of word chars, slashes, etc.
+        pattern = rb'[\w\\/]+\.blp'
+        matches = re.findall(pattern, m2_bytes, re.IGNORECASE)
+        
+        for m in matches:
+            try:
+                name = m.decode('utf-8')
+                results.append(name)
+            except:
+                pass
+                
+        # Deduplicate
+        return list(set(results))

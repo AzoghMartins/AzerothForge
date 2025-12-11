@@ -84,10 +84,43 @@ class DBCParser:
                 
         return results
 
+        return results
+
+    def read_creature_model_data_dbc(self, file_path) -> dict:
+        """
+        Reads CreatureModelData.dbc.
+        Returns {model_id: model_path_string}.
+        ModelID = Field 0.
+        ModelPath = Field 2 (string ref).
+        """
+        header, records_raw, string_block = self._parse_file(file_path)
+        if not header:
+            return {}
+            
+        Record = Array(header.field_count, Int32ul)
+        Records = Array(header.record_count, Record)
+        
+        try:
+            parsed_records = Records.parse(records_raw)
+        except Exception as e:
+            print(f"Error parsing {file_path}: {e}")
+            return {}
+            
+        results = {}
+        for row in parsed_records:
+            if len(row) > 2:
+                m_id = row[0]
+                path_offset = row[2]
+                path = self._get_string(path_offset, string_block)
+                if path:
+                    results[m_id] = path
+        return results
+
     def read_display_info_dbc(self, file_path) -> dict:
         """
-        Reads CreatureDisplayInfo.dbc and returns {id: model_id}.
-        ID = 0, ModelID = 1.
+        Reads CreatureDisplayInfo.dbc.
+        Returns {id: {'model_id': int, 'skin1': str}}.
+        ID = 0, ModelID = 1, Skin1 = 2 (string ref).
         """
         header, records_raw, string_block = self._parse_file(file_path)
         if not header:
@@ -104,10 +137,16 @@ class DBCParser:
 
         results = {}
         for row in parsed_records:
-            if len(row) > 1:
+            if len(row) > 2:
                 c_id = row[0]
                 model_id = row[1]
-                results[c_id] = model_id
+                skin_offset = row[2]
+                skin1 = self._get_string(skin_offset, string_block)
+                
+                results[c_id] = {
+                    'model_id': model_id,
+                    'skin1': skin1
+                }
                 
         return results
 

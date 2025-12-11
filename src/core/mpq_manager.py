@@ -12,6 +12,12 @@ class MpqManager:
             cls._instance.client_path = None
         return cls._instance
 
+    @classmethod
+    def get_instance(cls):
+        if not cls._instance:
+             cls._instance = MpqManager()
+        return cls._instance
+
     def initialize(self, client_path: str):
         """
         Initializes the MPQ Manager with the WoW client path.
@@ -39,8 +45,51 @@ class MpqManager:
             "lichking.MPQ",
             "expansion.MPQ",
             "common.MPQ"
-            # Locales (enUS/enGB) archives would be next, but ignoring for now as M2s are usually in common/exp
         ]
+        
+        # Scan for Locales (enUS, enGB, etc)
+        # They should be higher priority than Base but lower than patches? 
+        # Usually: patch-enUS-3.MPQ > locale-enUS.MPQ > ...
+        # Let's check subfolders.
+        locale_archives = []
+        possible_locales = ["enUS", "enGB", "deDE", "frFR", "esES", "ruRU"]
+        
+        for loc in possible_locales:
+            loc_path = os.path.join(data_path, loc)
+            if os.path.isdir(loc_path):
+                print(f"DEBUG: Found Locale Directory: {loc}")
+                # Load locale specific MPQs
+                # patch-enUS-3.MPQ
+                # patch-enUS-2.MPQ
+                # locale-enUS.MPQ
+                
+                # We prepend to priorities? Or load immediately?
+                # Let's load them into a list and prepend to self.archives later?
+                # Actually, simpler to just add them to the 'priorities' list if we have full paths?
+                # But priorities list assumes root Data folder.
+                
+                # Better: Load them here and add to self.archives
+                loc_files = [
+                    f"patch-{loc}-3.MPQ",
+                    f"patch-{loc}-2.MPQ",
+                    f"locale-{loc}.MPQ"
+                ]
+                
+                for lf in loc_files:
+                    full_loc_mpq = os.path.join(loc_path, lf)
+                    if os.path.exists(full_loc_mpq):
+                        try:
+                            archive = mpyq.MPQArchive(full_loc_mpq)
+                            self.archives.append(archive) # Append? Or Prepend?
+                            # If we append, they are lower priority than what we already loaded?
+                            # Wait, we haven't loaded priorities yet.
+                            print(f"DEBUG: Loading Locale Archive: {lf}")
+                            locale_archives.append(archive)
+                        except Exception as e:
+                            print(f"Failed to load {lf}: {e}")
+
+        # Add Locale archives to main list (High Priority for now)
+        self.archives.extend(locale_archives)
         
         # Load archives
         for filename in priorities:
@@ -56,51 +105,39 @@ class MpqManager:
                 # Also check common/ patches which might be loose? 
                 # WotLK structure is usually Data/common.MPQ etc.
                 pass
-                
-        # Also check for alphanumeric patches 'patch-*.MPQ' that we missed?
-        # Keeping it simple as per Task 1 reqs.
 
     def read_file(self, internal_path: str) -> Optional[bytes]:
         """
         Reads a file from the loaded archives.
-        Normalizes path separators to backslashes (WoW standard).
+        Normalizes path separators and tries multiple cases to avoid missing files.
         Returns raw bytes or None.
         """
         if not self.archives:
             print("Warning: No MPQ archives loaded.")
             return None
             
-        # Try variations of the path (Case sensitivity handling)
-        # WoW MPQs usually use backslash.
-        base_path = internal_path.replace("/", "\\")
-        
+        # Generate permutations to beat the Hash Lookup
         candidates = [
-            base_path,              # As provided
-            base_path.upper(),      # All caps (COMMON)
-            base_path.lower(),      # All lower
-            base_path.capitalize()  # First cap
+            internal_path,                                      # As requested
+            internal_path.replace('/', '\\'),                   # Backslashes (WoW Standard)
+            internal_path.replace('\\', '/'),                   # Forward Slashes
+            internal_path.lower(),                              # Lowercase
+            internal_path.upper(),                              # Uppercase
+            internal_path.lower().replace('/', '\\'),           # Lower + Backslash
         ]
         
         for archive in self.archives:
-            # Check if archive has a list of files we can check against?
-            # mpyq 'files' attribute is a list of bytes usually.
-            
             for candidate in candidates:
                 try:
                     # Try to read
                     file_data = archive.read_file(candidate)
                     if file_data:
-                        print(f"Found {candidate} in archive.")
+                        print(f"DEBUG: Found {internal_path} as {candidate} in archive.")
                         return file_data
                 except:
                     pass
-                    
-            # Fallback: Iterate all files in archive to find case-insensitive match?
-            # This is slow but might be necessary if listfile has weird casing.
-            # Only do this if specific lookups failed? 
-            # For performance, maybe skip this for now.
-                
-        print(f"Failed to find {internal_path} in any archive.")
+        
+        print(f"DEBUG: Failed to find {internal_path} in any archive.")
         return None
 
     def search_files(self, pattern: str) -> List[str]:
@@ -125,3 +162,15 @@ class MpqManager:
                     continue
                     
         return sorted(list(results))
+
+    def debug_list_files(self, filter_str: str):
+        """
+        Debug method to print all files matching the filter string.
+        """
+        print(f"DEBUG: searching MPQs for files matching: '{filter_str}'")
+        results = self.search_files(filter_str)
+        if results:
+            for r in results:
+                print(f"MATCH: {r}")
+        else:
+            print("DEBUG: No matches found.")
