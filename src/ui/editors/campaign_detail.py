@@ -33,17 +33,13 @@ class CampaignDetailWindow(QMainWindow):
         # Header
         header_layout = QHBoxLayout()
         header_layout.addWidget(QLabel(f"<b>{self.campaign_data['name']}</b>"))
-        header_layout.addStretch()
-        layout.addLayout(header_layout)
         
-    def init_ui(self):
-        central = QWidget()
-        self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
+        # Dev Realm Indicator
+        realm_name = self.dev_realm_config.get('name', 'Unknown Realm')
+        lbl_realm = QLabel(f"Dev Realm: {realm_name}")
+        lbl_realm.setStyleSheet("color: #aaa; font-style: italic; margin-left: 15px;")
+        header_layout.addWidget(lbl_realm)
         
-        # Header
-        header_layout = QHBoxLayout()
-        header_layout.addWidget(QLabel(f"<b>{self.campaign_data['name']}</b>"))
         header_layout.addStretch()
         layout.addLayout(header_layout)
         
@@ -108,11 +104,40 @@ class CampaignDetailWindow(QMainWindow):
         self.quest_list = QTableWidget()
         self.quest_list.setColumnCount(2)
         self.quest_list.setHorizontalHeaderLabels(["ID", "Title"])
+        self.quest_list.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.quest_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.quest_list.doubleClicked.connect(self.on_edit_quest)
         layout.addWidget(self.quest_list)
-        # Placeholder buttons
-        btn = QPushButton("Add Quest (TODO)")
-        btn.setEnabled(False)
-        layout.addWidget(btn)
+        
+        # Actions
+        actions = QHBoxLayout()
+        
+        self.new_quest_btn = QPushButton("Add Quest")
+        self.new_quest_btn.clicked.connect(self.on_new_quest)
+        self.new_quest_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+        
+        self.edit_quest_btn = QPushButton("Edit Quest")
+        self.edit_quest_btn.clicked.connect(self.on_edit_quest)
+        
+        actions.addWidget(self.new_quest_btn)
+        actions.addWidget(self.edit_quest_btn)
+        layout.addLayout(actions)
+
+    def on_new_quest(self):
+        from src.ui.wizards.quest_wizard import QuestWizard
+        
+        # Get Range
+        ranges = self.campaign_data.get("ranges", {}).get("quest", {})
+        min_id = ranges.get("start", 0)
+        max_id = ranges.get("end", 0)
+        
+        wizard = QuestWizard(self.config_manager, min_id, max_id, self.campaign_data, self)
+        if wizard.exec():
+            # TODO: Handle saving logic in next step
+            print("Quest Wizard Finished:", wizard.quest_data)
+
+    def on_edit_quest(self):
+        print("Edit Quest Placeholder")
 
     def load_npc_list(self):
         self.npc_table.setRowCount(0)

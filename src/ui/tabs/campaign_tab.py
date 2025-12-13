@@ -269,6 +269,11 @@ class CampaignTab(QWidget):
         
         # Launch Detail Window
         self.detail_window = CampaignDetailWindow(campaign, dev_realm_config, self.campaign_manager, self.config_manager, self)
+        
+        # Align with Main Window
+        if self.window():
+            self.detail_window.move(self.window().pos())
+            
         self.detail_window.show()
 
     def update_suggestion(self):
