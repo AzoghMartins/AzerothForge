@@ -36,7 +36,7 @@
         "db_name": "acore_auth"
     },
     "auth_service_name": "azeroth-authserver.service",
-    "client_data_path": "/media/azoghmartins/Production/FTP/_GAMES/WoW Client/dbc",
+    "client_data_path": "/home/azoghmartins/Acore/data/dbc",
     "playerbots_enabled": true,
     "bot_prefix": "RNDBOT",
     "wow_client_path": "/media/azoghmartins/Production/FTP/_GAMES/WoW Client"

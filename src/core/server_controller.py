@@ -42,7 +42,7 @@ class ServerController:
                 check=False 
             )
             is_active = result.stdout.strip() == "active"
-            print(f"Checking service: '{service_name}' -> Result: {is_active}")
+            
             return is_active
         except Exception as e:
             print(f"Error checking service {service_name}: {e}")
