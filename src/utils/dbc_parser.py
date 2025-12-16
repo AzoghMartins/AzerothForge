@@ -183,3 +183,62 @@ class DBCParser:
                 results[m_id] = name
                 
         return results
+
+    def read_quest_sort_dbc(self, file_path) -> dict:
+        """
+        Reads QuestSort.dbc.
+        Returns {id: name}.
+        Field 0 = ID, Field 1 = Name_Lang (Offset).
+        """
+        header, records_raw, string_block = self._parse_file(file_path)
+        if not header:
+            return {}
+            
+        Record = Array(header.field_count, Int32ul)
+        Records = Array(header.record_count, Record)
+        
+        try:
+            parsed_records = Records.parse(records_raw)
+        except Exception as e:
+            print(f"Error parsing {file_path}: {e}")
+            return {}
+            
+        results = {}
+        for row in parsed_records:
+            if len(row) > 1:
+                qs_id = row[0]
+                name_offset = row[1]
+                name = self._get_string(name_offset, string_block)
+                if name:
+                    results[qs_id] = name
+        return results
+
+    def read_area_table_dbc(self, file_path) -> dict:
+        """
+        Reads AreaTable.dbc.
+        Returns {id: name}.
+        Field 0 = ID.
+        Field 11 = AreaName_Lang (Offset) (for 3.3.5a).
+        """
+        header, records_raw, string_block = self._parse_file(file_path)
+        if not header:
+            return {}
+            
+        Record = Array(header.field_count, Int32ul)
+        Records = Array(header.record_count, Record)
+        
+        try:
+            parsed_records = Records.parse(records_raw)
+        except Exception as e:
+            print(f"Error parsing {file_path}: {e}")
+            return {}
+            
+        results = {}
+        for row in parsed_records:
+            if len(row) > 11:
+                area_id = row[0]
+                name_offset = row[11]
+                name = self._get_string(name_offset, string_block)
+                if name:
+                    results[area_id] = name
+        return results

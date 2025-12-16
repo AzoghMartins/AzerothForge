@@ -77,5 +77,90 @@ ITEM_QUALITY_COLORS = {
     4: "#a335ee",  # Epic
     5: "#ff8000",  # Legendary
     6: "#e6cc80",  # Artifact
-    7: "#e6cc80"   # Heirloom
+    81: "#d63931"   # Artifact
+}
+
+QUEST_TYPES = {
+    0: "Combat",
+    1: "Kill",
+    2: "Deliver",
+    3: "Interact",
+    4: "Escort",
+    5: "Timed",
+    6: "PvP",
+    7: "Raid",
+    8: "Dungeon"
+}
+
+QUEST_FLAGS = {
+    1: "Stay Alive",
+    2: "Party Accept",
+    4: "Exploration",
+    8: "Sharable",
+    16: "Has Condition",
+    32: "Hide Reward",
+    64: "Raid Group",
+    128: "TBC",
+    256: "No Quest Log",
+    512: "Hide Tracker",
+    1024: "Daily",
+    2048: "Repeatable",
+    4096: "Unused",
+    8192: "Weekly",
+    16384: "Auto Complete",
+    32768: "Special Item",
+    65536: "Objective Text"
+}
+
+
+
+class NPC_FLAGS:
+    GOSSIP = 1
+    QUEST_GIVER = 2
+    VENDOR = 128
+    FLIGHT_MASTER = 8192
+
+class SMART_EVENT:
+    ACCEPTED_QUEST = 19
+    REWARD_QUEST = 20
+    GOSSIP_SELECT = 62
+    GOSSIP_HELLO = 64
+
+class SMART_ACTION:
+    TALK = 1
+    KILLED_MONSTER_CREDIT = 33
+    SET_INGAME_PHASE_MASK = 88
+
+class SMART_TARGET:
+    SELF = 1
+    MY_OWNER = 2
+    INVOKER = 7 # The player
+
+XP_DIFFICULTY = {
+    0: "No XP",
+    1: "Very Easy",
+    2: "Easy",
+    3: "Normal",
+    4: "Hard",
+    5: "Very Hard",
+    6: "Elite",
+    7: "Raid",
+    8: "World Event",
+    9: "Custom 1",
+    10: "Custom 2"
+}
+
+QUEST_INFO_IDS = {
+    0: "None",
+    1: "Group",
+    21: "Life",
+    41: "PvP",
+    62: "Raid",
+    81: "Dungeon",
+    82: "World Event",
+    83: "Legendary",
+    84: "Escort",
+    85: "Heroic",
+    88: "Raid (10)",
+    89: "Raid (25)"
 }

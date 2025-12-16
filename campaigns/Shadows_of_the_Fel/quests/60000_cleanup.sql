@@ -1,0 +1,10 @@
+DELETE FROM quest_template WHERE ID = 60000;
+DELETE FROM quest_template_addon WHERE ID = 60000;
+DELETE FROM creature_queststarter WHERE quest = 60000;
+DELETE FROM creature_questender WHERE quest = 60000;
+DELETE FROM quest_offer_reward WHERE ID = 60000;
+DELETE FROM quest_request_items WHERE ID = 60000;
+DELETE FROM npc_text WHERE ID = 6000001;
+DELETE FROM gossip_menu WHERE MenuID = 6000001 AND TextID = 6000001;
+DELETE FROM gossip_menu_option WHERE MenuID = 6000001;
+DELETE FROM smart_scripts WHERE entryorguid = 197 AND source_type = 0 AND event_type = 62 AND event_param1 = 6000001;

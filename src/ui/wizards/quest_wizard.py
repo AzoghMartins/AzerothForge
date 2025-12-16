@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
 from PySide6.QtCore import Qt, Signal, QSize
 from src.ui.tools.search_window import SearchWindow
 from src.database.db_manager import DbManager
+from src.ui.components.selectors import BitmaskSelector, SmartSelector, ZoneSortSelector
+from src.utils.game_constants import QUEST_FLAGS, QUEST_INFO_IDS, XP_DIFFICULTY
 from functools import partial
 
 class ObjectiveDialog(QDialog):
@@ -33,11 +35,19 @@ class ObjectiveDialog(QDialog):
         type_group = QGroupBox("Objective Type")
         type_layout = QVBoxLayout()
         self.obj_type_combo = QComboBox()
-        self.obj_type_combo.addItems(["Slay Creature", "Collect Item", "Talk to NPC", "Reach Location"])
+        self.obj_type_combo = QComboBox()
+        self.obj_type_combo.addItems(["Slay Creature", "Collect Item", "Interact with GameObject", "Talk to NPC", "Reach Location"])
         self.obj_type_combo.currentIndexChanged.connect(self.update_objective_ui)
         type_layout.addWidget(self.obj_type_combo)
         type_group.setLayout(type_layout)
+        type_group.setLayout(type_layout)
         layout.addWidget(type_group)
+        
+        # Tracker Text (Global for all types)
+        self.tracker_text = QLineEdit()
+        self.tracker_text.setPlaceholderText("Override Tracker Text (Optional)")
+        layout.addWidget(QLabel("Objective Description (Tracker):"))
+        layout.addWidget(self.tracker_text)
 
         # Dynamic Stack
         self.obj_stack = QStackedWidget()
@@ -157,6 +167,7 @@ class ObjectiveDialog(QDialog):
         self.talk_id = QLineEdit()
         self.talk_id.setPlaceholderText("NPC ID")
         self.talk_name = QLineEdit()
+        self.talk_name.setPlaceholderText("NPC Name")
         self.talk_name.setReadOnly(True)
         btn_talk = QPushButton("🔍")
         btn_talk.clicked.connect(lambda: self.open_selector("talk_npc"))
@@ -167,8 +178,16 @@ class ObjectiveDialog(QDialog):
         
         self.grp_gossip = QGroupBox("Gossip Settings")
         l_gos = QFormLayout()
-        self.gossip_text = QLineEdit()
-        l_gos.addRow("Option Text:", self.gossip_text)
+        
+        self.gossip_text = QTextEdit()
+        self.gossip_text.setPlaceholderText("Gossip Text (What the NPC says)")
+        self.gossip_text.setMaximumHeight(60)
+        l_gos.addRow("NPC Text:", self.gossip_text)
+        
+        self.option_text = QLineEdit()
+        self.option_text.setPlaceholderText("Player Reply (Option Text) - Default: 'I am ready'")
+        l_gos.addRow("Option Text:", self.option_text)
+        
         self.grp_gossip.setLayout(l_gos)
         
         l2.addWidget(self.grp_talk)
@@ -198,6 +217,49 @@ class ObjectiveDialog(QDialog):
         l3.addWidget(self.gm_btn)
         l3.addStretch()
         self.obj_stack.addWidget(p3)
+
+        # --- Page 4: Interact ---
+        p4 = QWidget()
+        l4 = QVBoxLayout(p4)
+        self.grp_int = QGroupBox("Target GameObject")
+        l_int = QHBoxLayout()
+        self.int_id = QLineEdit()
+        self.int_id.setPlaceholderText("GameObject ID")
+        self.int_name = QLineEdit()
+        self.int_name.setReadOnly(True)
+        btn_int = QPushButton("🔍")
+        btn_int.clicked.connect(lambda: self.open_selector("interact_go"))
+        l_int.addWidget(self.int_id)
+        l_int.addWidget(self.int_name)
+        l_int.addWidget(btn_int)
+        self.grp_int.setLayout(l_int)
+        
+        self.grp_int_qty = QGroupBox("Requirements")
+        l_iqty = QHBoxLayout()
+        self.int_qty_spin = QSpinBox()
+        self.int_qty_spin.setRange(1, 50)
+        l_iqty.addWidget(QLabel("Amount:"))
+        l_iqty.addWidget(self.int_qty_spin)
+        self.grp_int_qty.setLayout(l_iqty)
+        
+        l4.addWidget(self.grp_int)
+        l4.addWidget(self.grp_int_qty)
+        l4.addStretch()
+        self.obj_stack.addWidget(p4)
+
+        # --- Page 3: Reach (Moved to index 5 now potentially? No, stack index is sequential) ---
+        # Actually stack adds in order. So p3 was added at index 3.
+        # I am inserting p4 at index 4 (Interact).
+        # And Reach was already added. I should probably re-order or just append.
+        # But `Reach` was added above as p3.
+        # Wait, the replacement chunk is meant to REPLACE p3? No.
+        # I want to INSERT Interact support.
+        # To avoid index confusion, I'll just append Interact page effectively at the end of the stack init sequence
+        # But I need to respect the index I use in update_objective_ui.
+        
+        # Let's just Add it here.
+        # Wait, the file has Reach at p3 (index 3).
+        # I will replace the end of p3 block to append p4 block.
         
         layout.addWidget(self.obj_stack)
         
@@ -223,6 +285,8 @@ class ObjectiveDialog(QDialog):
             self.obj_stack.setCurrentIndex(2)
         elif obj_type == "Reach Location":
             self.obj_stack.setCurrentIndex(3)
+        elif obj_type == "Interact with GameObject":
+            self.obj_stack.setCurrentIndex(4)
 
     def open_selector(self, context):
         table = None
@@ -242,6 +306,9 @@ class ObjectiveDialog(QDialog):
         elif context == "talk_npc":
             table = "creature_template"
             handler = self.on_talk_selected
+        elif context == "interact_go":
+            table = "gameobject_template"
+            handler = self.on_interact_selected
             
         if table:
             self.picker = SearchWindow(self.config_manager, table, is_picker=True, parent=self)
@@ -269,6 +336,11 @@ class ObjectiveDialog(QDialog):
     def on_talk_selected(self, row):
         self.talk_id.setText(str(row['entry']))
         self.talk_name.setText(row['name'])
+        self.picker.close()
+
+    def on_interact_selected(self, row):
+        self.int_id.setText(str(row['entry']))
+        self.int_name.setText(row['name'])
         self.picker.close()
 
     def fetch_gm_coords(self):
@@ -317,7 +389,10 @@ class ObjectiveDialog(QDialog):
             data["description"] = f"Collect {self.item_name.text()} (x{data['target_count']})"
         elif otyp == "Talk to NPC":
             data["target_id"] = self.talk_id.text().strip()
-            data["gossip_text"] = self.gossip_text.text()
+            data["gossip_text"] = self.gossip_text.toPlainText().strip()
+            # Capture Option Text
+            opt = self.option_text.text().strip()
+            data["option_text"] = opt if opt else "I am ready."
             data["description"] = f"Talk to {self.talk_name.text()}"
         elif otyp == "Reach Location":
             data["map_id"] = self.loc_map.text()
@@ -325,6 +400,13 @@ class ObjectiveDialog(QDialog):
             data["pos_y"] = self.loc_y.text()
             data["pos_z"] = self.loc_z.text()
             data["description"] = "Reach Location"
+        elif otyp == "Interact with GameObject":
+            data["target_id"] = self.int_id.text().strip()
+            data["target_count"] = self.int_qty_spin.value()
+            data["description"] = f"Interact with {self.int_name.text()} (x{data['target_count']})"
+        
+        # Add tracker text
+        data["tracker_text"] = self.tracker_text.text().strip()
             
         self.result_data = data
         self.accept()
@@ -373,6 +455,10 @@ class QuestWizard(QDialog):
         self.pages.addWidget(self.page3)
 
         # Page 4: Rewards
+        # Before Rewards, let's insert Phasing Page
+        self.page_phasing = self.setup_page_phasing()
+        self.pages.addWidget(self.page_phasing)
+        
         self.page4 = self.setup_page_rewards()
         self.pages.addWidget(self.page4)
 
@@ -453,10 +539,12 @@ class QuestWizard(QDialog):
         self.title_input.textChanged.connect(self.validate_page)
         form.addRow("Title (Required):", self.title_input)
         
-        # Zone
-        self.zone_combo = QComboBox()
-        self.zone_combo.addItems(["General", "Dragonblight", "Epic", "Dungeon", "Raid"])
-        form.addRow("Zone / Category:", self.zone_combo)
+        # Zone / Sort ID
+        self.zone_selector = ZoneSortSelector()
+        form.addRow("Category / Sort ID:", self.zone_selector)
+        
+        # Helper disabled/removed as selector handles it
+        # self.zone_combo.currentIndexChanged.connect(self.on_zone_helper_changed)
         
         # Log Text
         self.log_text = QTextEdit()
@@ -470,11 +558,29 @@ class QuestWizard(QDialog):
         self.npc_text.setMaximumHeight(100)
         form.addRow("Offer Dialogue:", self.npc_text)
         
-        # Completion Text
-        self.completion_text = QTextEdit()
-        self.completion_text.setPlaceholderText("Thank you for your help!")
-        self.completion_text.setMaximumHeight(80)
-        form.addRow("Completion Text:", self.completion_text)
+        # Reward Text (NPC)
+        self.reward_text = QTextEdit()
+        self.reward_text.setPlaceholderText("Thank you for your help! (Spoken by NPC on turn-in)")
+        self.reward_text.setMaximumHeight(80)
+        form.addRow("Reward Text (NPC Speech):", self.reward_text)
+        
+        # Tracker Text (Complete)
+        self.tracker_complete_text = QTextEdit()
+        self.tracker_complete_text.setPlaceholderText("Return to [NPC Name]. (Shown in Tracker/Log when complete)")
+        self.tracker_complete_text.setMaximumHeight(60)
+        form.addRow("Tracker Text (On Complete):", self.tracker_complete_text)
+        
+        # Request Items Text (In Progress)
+        self.request_items_text = QTextEdit()
+        self.request_items_text.setPlaceholderText("How goes the task? (In Progress Text)")
+        self.request_items_text.setMaximumHeight(80)
+        form.addRow("Request Items Text (In Progress):", self.request_items_text)
+        
+        # Area Description
+        self.area_desc = QTextEdit()
+        self.area_desc.setPlaceholderText("Description shown in Quest Log when in area (Optional)")
+        self.area_desc.setMaximumHeight(60)
+        form.addRow("Area Description:", self.area_desc)
         
         layout.addLayout(form)
         return page
@@ -483,9 +589,8 @@ class QuestWizard(QDialog):
         # Page 1 Validation
         if self.pages.currentIndex() == 0:
             title = self.title_input.text().strip()
-            title = self.title_input.text().strip()
             self.next_btn.setEnabled(bool(title))
-        elif self.pages.currentIndex() == 4: # Assignment Page
+        elif self.pages.currentIndex() == 5: # Assignment Page (index shifted by 1 due to phasing)
             starter = self.starter_id.text().strip()
             self.next_btn.setEnabled(bool(starter))
         else:
@@ -498,10 +603,14 @@ class QuestWizard(QDialog):
             if current == 0:
                 self.quest_data["entry"] = self.id_input.value()
                 self.quest_data["title"] = self.title_input.text().strip()
-                self.quest_data["zone"] = self.zone_combo.currentText()
+                self.quest_data["zone_or_sort"] = self.zone_selector.value()
                 self.quest_data["log_description"] = self.log_text.toPlainText()
                 self.quest_data["quest_description"] = self.npc_text.toPlainText()
-                self.quest_data["quest_completion_log"] = self.completion_text.toPlainText()
+                self.quest_data["reward_text"] = self.reward_text.toPlainText()
+                self.quest_data["tracker_complete_text"] = self.tracker_complete_text.toPlainText()
+                self.quest_data["request_items_text"] = self.request_items_text.toPlainText()
+                self.quest_data["area_description"] = self.area_desc.toPlainText()
+                
             elif current == 1:
                 self.quest_data["min_level"] = self.min_level_spin.value()
                 self.quest_data["quest_level"] = self.quest_level_spin.value()
@@ -523,14 +632,42 @@ class QuestWizard(QDialog):
                     
             elif current == 2: # Objectives
                 self.quest_data["objectives"] = self.quest_objectives
+                
+                # Emotes (Moved from Page 2 to 3)
+                self.quest_data["offer_emotes"] = []
+                for i in range(4):
+                    eid = self.offer_emotes[i].value()
+                    delay = self.offer_delays[i].value()
+                    self.quest_data["offer_emotes"].append((eid, delay))
                     
-            elif current == 3: # Rewards
+                self.quest_data["emote_on_complete"] = self.emote_complete.value()
+                self.quest_data["emote_on_incomplete"] = self.emote_incomplete.value()
+                    
+            elif current == 3: # Phasing
+                self.quest_data["phase_accept"] = self.phase_accept.value()
+                self.quest_data["phase_complete"] = self.phase_complete.value()
+                # Spell Area
+                self.quest_data["spell_area"] = []
+                for i in range(self.sa_list.count()):
+                    item = self.sa_list.item(i)
+                    self.quest_data["spell_area"].append(item.data(Qt.UserRole))
+
+            elif current == 4: # Rewards
                 self.quest_data["reward_gold"] = self.rew_gold.value()
                 self.quest_data["reward_silver"] = self.rew_silver.value()
                 self.quest_data["reward_copper"] = self.rew_copper.value()
-                self.quest_data["reward_xp_difficulty"] = self.rew_xp_combo.currentText()
+                self.quest_data["reward_gold"] = self.rew_gold.value()
+                self.quest_data["reward_silver"] = self.rew_silver.value()
+                self.quest_data["reward_copper"] = self.rew_copper.value()
+                self.quest_data["reward_xp_difficulty"] = self.rew_xp_combo.currentData()
                 self.quest_data["rewards_fixed"] = self.rewards_fixed
                 self.quest_data["rewards_choice"] = self.rewards_choice
+                
+                # Spells & Mail
+                self.quest_data["source_spell"] = self.source_spell.value()
+                self.quest_data["reward_spell"] = self.reward_spell.value()
+                self.quest_data["reward_mail_template_id"] = self.mail_template.value()
+                self.quest_data["reward_mail_delay"] = self.mail_delay.value()
 
             # Move Next
             self.pages.setCurrentIndex(current + 1)
@@ -545,7 +682,7 @@ class QuestWizard(QDialog):
             
         else:
             # Finish - Save Last Page Data (if we are on the last page)
-            if current == 4: # Assignment Page
+            if current == 5: # Assignment Page
                 self.quest_data["starter_id"] = self.starter_id.text().strip()
                 self.quest_data["ender_id"] = self.ender_id.text().strip()
                 # If same as starter checked, ensure ender_id matches starter_id just in case
@@ -556,6 +693,8 @@ class QuestWizard(QDialog):
 
     def submit_quest(self):
         from src.core.quest_translator import QuestTranslator
+        import os
+        
         # Convert to Multi-Table Package
         package = QuestTranslator.prepare_transaction_package(self.quest_data)
         
@@ -563,9 +702,42 @@ class QuestWizard(QDialog):
         import pprint
         pprint.pprint(package)
         
-        # Save to DB
+        # Resolve Campaign Path
+        campaign_name = self.campaign_data.get('name', 'Default Campaign')
+        # Sanitize name for folder usage
+        safe_name = "".join([c if c.isalnum() or c in ('-', '_') else '_' for c in campaign_name])
+        
+        camp_dir = os.path.join("campaigns", safe_name)
+        if not os.path.exists(camp_dir):
+            try:
+                os.makedirs(camp_dir)
+            except OSError as e:
+                print(f"Failed to create campaign dir: {e}")
+                
+                
+        
+        # New Granular Structure: campaigns/{safe_name}/quests/
+        quests_dir = os.path.join(camp_dir, "quests")
+        if not os.path.exists(quests_dir):
+            try:
+                os.makedirs(quests_dir)
+            except OSError as e:
+                print(f"Failed to create quests dir: {e}")
+                quests_dir = camp_dir # Fallback
+                
+        # Filename: ID.sql
+        filename = f"{package['id']}.sql"
+        cleanup_filename = f"{package['id']}_cleanup.sql"
+        
+        migration_file = os.path.join(quests_dir, filename)
+        cleanup_file = os.path.join(quests_dir, cleanup_filename)
+        
+        # Determine Realm ID (Dev vs Target) - default to Active if missing, but we want Dev
+        dev_realm_id = self.campaign_data.get('dev_realm_id')
+        
+        # Save to DB (Commit changes and log to file)
         db = DbManager.get_instance()
-        success = db.save_quest_transaction(package)
+        success = db.save_quest_transaction(package, dry_run=False, log_file=migration_file, cleanup_file=cleanup_file, realm_id=dev_realm_id)
         
         if success:
             QMessageBox.information(self, "Success", f"Quest {package['id']} saved successfully!")
@@ -696,6 +868,46 @@ class QuestWizard(QDialog):
         btns.addWidget(rem_btn)
         layout.addLayout(btns)
         
+        # Emotes Group (Moved to Step 3)
+        emote_grp = QGroupBox("NPC Emotes (Immersion)")
+        emote_layout = QGridLayout()
+        
+        emote_layout.addWidget(QLabel("<b>Offer Emotes</b>"), 0, 0, 1, 3)
+        emote_layout.addWidget(QLabel("Emote ID"), 1, 1)
+        emote_layout.addWidget(QLabel("Delay (ms)"), 1, 2)
+        
+        self.offer_emotes = []
+        self.offer_delays = []
+        
+        for i in range(4):
+            lbl = QLabel(f"Emote {i+1}:")
+            e_spin = QSpinBox()
+            e_spin.setRange(0, 9999)
+            d_spin = QSpinBox()
+            d_spin.setRange(0, 60000)
+            
+            emote_layout.addWidget(lbl, i+2, 0)
+            emote_layout.addWidget(e_spin, i+2, 1)
+            emote_layout.addWidget(d_spin, i+2, 2)
+            
+            self.offer_emotes.append(e_spin)
+            self.offer_delays.append(d_spin)
+            
+        # Request Emotes
+        emote_layout.addWidget(QLabel("<b>Request Emotes</b>"), 0, 3, 1, 2)
+        emote_layout.addWidget(QLabel("On Complete:"), 1, 3)
+        self.emote_complete = QSpinBox()
+        self.emote_complete.setRange(0, 9999)
+        emote_layout.addWidget(self.emote_complete, 1, 4)
+        
+        emote_layout.addWidget(QLabel("On Incomplete:"), 2, 3)
+        self.emote_incomplete = QSpinBox()
+        self.emote_incomplete.setRange(0, 9999)
+        emote_layout.addWidget(self.emote_incomplete, 2, 4)
+        
+        emote_grp.setLayout(emote_layout)
+        layout.addWidget(emote_grp)
+        
         return page
 
     def add_objective(self):
@@ -716,12 +928,11 @@ class QuestWizard(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         
-        layout.addWidget(QLabel("<b>Step 4: Rewards</b>"))
+        layout.addWidget(QLabel("<b>Step 5: Rewards</b>"))
         
         # 1. Economy
         econ_group = QGroupBox("Economy")
         econ_layout = QHBoxLayout()
-        
         self.rew_gold = QSpinBox()
         self.rew_gold.setRange(0, 100000)
         self.rew_gold.setSuffix(" g")
@@ -741,10 +952,43 @@ class QuestWizard(QDialog):
         econ_layout.addStretch()
         
         self.rew_xp_combo = QComboBox()
-        self.rew_xp_combo.addItems(["Standard", "Low", "High", "Epic"])
+        for k, v in XP_DIFFICULTY.items():
+            self.rew_xp_combo.addItem(v, k)
         
-        econ_layout.addWidget(QLabel("XP Difficulty:"))
+        econ_layout.addWidget(QLabel("Reward Scale (XP/Money):"))
+        self.rew_xp_combo.setToolTip("Multiplies XP and Money rewards based on Difficulty.")
         econ_layout.addWidget(self.rew_xp_combo)
+        
+        econ_group.setLayout(econ_layout)
+        layout.addWidget(econ_group)
+        
+        # 1.5 Bonus Spells & Mail
+        bonus_group = QGroupBox("Spells & Mail")
+        bonus_layout = QGridLayout()
+        
+        # Source Spell (Cast on Accept)
+        bonus_layout.addWidget(QLabel("Source Spell (On Accept):"), 0, 0)
+        self.source_spell = SmartSelector("spell")
+        bonus_layout.addWidget(self.source_spell, 0, 1)
+        
+        # Reward Spell (Cast on Complete)
+        bonus_layout.addWidget(QLabel("Reward Spell (On Complete):"), 1, 0)
+        self.reward_spell = SmartSelector("spell")
+        bonus_layout.addWidget(self.reward_spell, 1, 1)
+        
+        # Mail
+        bonus_layout.addWidget(QLabel("Mail Template ID:"), 2, 0)
+        self.mail_template = QSpinBox()
+        self.mail_template.setRange(0, 999999)
+        bonus_layout.addWidget(self.mail_template, 2, 1)
+        
+        bonus_layout.addWidget(QLabel("Mail Delay (s):"), 2, 2)
+        self.mail_delay = QSpinBox()
+        self.mail_delay.setRange(0, 999999)
+        bonus_layout.addWidget(self.mail_delay, 2, 3)
+        
+        bonus_group.setLayout(bonus_layout)
+        layout.addWidget(bonus_group)
         
         econ_group.setLayout(econ_layout)
         layout.addWidget(econ_group)
@@ -836,7 +1080,7 @@ class QuestWizard(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         
-        layout.addWidget(QLabel("<b>Step 5: Quest Assignment</b>"))
+        layout.addWidget(QLabel("<b>Step 6: Assignment</b>"))
         
         # 1. Quest Starter
         start_group = QGroupBox("Quest Starter")
@@ -934,3 +1178,77 @@ class QuestWizard(QDialog):
         self.ender_id.setText(str(row_data['entry']))
         self.ender_name.setText(row_data['name'])
         self.picker.close()
+
+    def setup_page_phasing(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        
+        layout.addWidget(QLabel("<b>Step 4: Phasing & Visibility</b>"))
+        
+        # 1. Triggered Phasing
+        grp_trig = QGroupBox("Triggered Phasing (SmartAI)")
+        form = QFormLayout(grp_trig)
+        
+        self.phase_accept = QSpinBox()
+        self.phase_accept.setRange(0, 65535)
+        self.phase_complete = QSpinBox()
+        self.phase_complete.setRange(0, 65535)
+        
+        form.addRow("Phase Mask on Accept:", self.phase_accept)
+        form.addRow("Phase Mask on Complete:", self.phase_complete)
+        layout.addWidget(grp_trig)
+        
+        # 2. Permanent Zone Phasing (spell_area)
+        grp_sa = QGroupBox("Permanent Zone Phasing (spell_area)")
+        l_sa = QVBoxLayout(grp_sa)
+        
+        # Input Row
+        h_in = QHBoxLayout()
+        self.sa_spell = QLineEdit()
+        self.sa_spell.setPlaceholderText("Spell ID")
+        self.sa_spell.setFixedWidth(80)
+        self.sa_area = QLineEdit()
+        self.sa_area.setPlaceholderText("Area ID")
+        self.sa_area.setFixedWidth(80)
+        self.sa_auto = QCheckBox("Autocast")
+        self.sa_auto.setChecked(True)
+        btn_add = QPushButton("Add")
+        btn_add.clicked.connect(self.add_sa_entry)
+        
+        h_in.addWidget(QLabel("Spell:"))
+        h_in.addWidget(self.sa_spell)
+        h_in.addWidget(QLabel("Area:"))
+        h_in.addWidget(self.sa_area)
+        h_in.addWidget(self.sa_auto)
+        h_in.addWidget(btn_add)
+        
+        l_sa.addLayout(h_in)
+        
+        # List
+        self.sa_list = QListWidget()
+        l_sa.addWidget(self.sa_list)
+        
+        btn_rem = QPushButton("Remove Selected")
+        btn_rem.clicked.connect(lambda: self.sa_list.takeItem(self.sa_list.currentRow()))
+        l_sa.addWidget(btn_rem)
+        
+        layout.addWidget(grp_sa)
+        layout.addStretch()
+        return page
+
+    def add_sa_entry(self):
+        spell = self.sa_spell.text().strip()
+        area = self.sa_area.text().strip()
+        if not spell or not area: return
+        
+        auto = 1 if self.sa_auto.isChecked() else 0
+        data = {'spell': spell, 'area': area, 'autocast': auto}
+        
+        item = QListWidgetItem(f"Spell {spell} @ Area {area} (Auto: {auto})")
+        item.setData(Qt.UserRole, data)
+        self.sa_list.addItem(item)
+        
+        self.sa_spell.clear()
+        self.sa_area.clear()
+
+

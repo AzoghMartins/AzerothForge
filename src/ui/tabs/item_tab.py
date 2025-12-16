@@ -1,4 +1,6 @@
 from src.ui.components.base_manager import BaseManagerTab
+from src.database.db_manager import DbManager
+from src.ui.components.worker import SearchWorker
 from PySide6.QtWidgets import (QPushButton, QTableWidgetItem, QAbstractItemView, QHeaderView, 
                                QMessageBox, QInputDialog)
 from PySide6.QtCore import Qt, Signal
@@ -7,11 +9,6 @@ from src.utils.game_constants import ITEM_QUALITY_COLORS
 from src.core.server_controller import ServerController
 from src.ui.components.character_selector import CharacterSelectorDialog
 
-try:
-    import mysql.connector
-except ImportError:
-    mysql = None
-
 class ItemTab(BaseManagerTab):
     update_signal = Signal(list)
 
@@ -19,11 +16,9 @@ class ItemTab(BaseManagerTab):
         self.config_manager = config_manager
         super().__init__("Items", parent)
         self.customize_ui()
+        self.search_worker = None
         
-        self.update_signal.connect(self.update_table)
-        
-        # Initial search
-        self.on_search()
+        # Initial search removed
 
     def on_realm_changed(self):
         super().on_realm_changed()
@@ -46,6 +41,8 @@ class ItemTab(BaseManagerTab):
         
         # Resize Entry ID column to contents
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        
+        self.table.itemSelectionChanged.connect(self.on_selection_changed)
 
         # Actions
         self.send_btn = QPushButton("Send to Player...")
@@ -54,45 +51,21 @@ class ItemTab(BaseManagerTab):
         self.action_layout.addWidget(self.send_btn)
 
     def on_search(self):
-        search_text = self.search_input.text().strip()
+        search_text = self.search_bar.text().strip()
+        db = DbManager.get_instance()
         
-        realm = self.config_manager.get_active_realm()
-        auth_config = self.config_manager.config.get("auth_database", {})
-        world_db = realm.get("db_world_name", "acore_world")
+        # Resolve Active Realm ID
+        from src.core.campaign_manager import CampaignManager
+        cm = CampaignManager(self.config_manager)
+        active_campaign = cm.get_active_campaign()
+        realm_id = active_campaign.get("dev_realm_id") if active_campaign else None
         
-        if not mysql:
-            print("MySQL not installed")
-            return
-
-        try:
-            conn = mysql.connector.connect(
-                host=auth_config.get("host", "localhost"),
-                port=auth_config.get("port", 3306),
-                user=auth_config.get("user", "acore"),
-                password=auth_config.get("password", "acore"),
-                database=auth_config.get("db_name", "acore_auth")
-            )
-            cursor = conn.cursor()
+        if self.search_worker and self.search_worker.isRunning():
+            self.search_worker.terminate()
             
-            # Query item_template
-            # Columns: entry, name, Quality, ItemLevel, RequiredLevel, class, subclass
-            query = f"""
-                SELECT entry, name, Quality, ItemLevel, RequiredLevel, class, subclass
-                FROM {world_db}.item_template
-                WHERE name LIKE %s
-                LIMIT 100
-            """
-            
-            params = [f"%{search_text}%"]
-            
-            cursor.execute(query, tuple(params))
-            rows = cursor.fetchall()
-            conn.close()
-            
-            self.update_signal.emit(rows)
-            
-        except mysql.connector.Error as e:
-            print(f"Item Search Error: {e}")
+        self.search_worker = SearchWorker(db.search_items, search_text, realm_id=realm_id)
+        self.search_worker.results_ready.connect(self.update_table)
+        self.search_worker.start()
 
     def update_table(self, rows):
         self.table.setSortingEnabled(False)
@@ -102,50 +75,61 @@ class ItemTab(BaseManagerTab):
             r = self.table.rowCount()
             self.table.insertRow(r)
             
-            # entry, name, Quality, ItemLevel, RequiredLevel, class, subclass
-            entry, name, quality, ilvl, req_lvl, cls, subcls = row
+            # entry, name, ItemLevel, RequiredLevel, Quality, class, subclass
+            entry = row['entry']
+            name = row.get('name', 'Unknown')
+            ilvl = row.get('ItemLevel', 0)
+            req_lvl = row.get('RequiredLevel', 0)
+            quality = row.get('Quality', 1)
+            cls = row.get('class', 0)
+            subcls = row.get('subclass', 0)
             
-            # 0. Entry ID
-            item_id = QTableWidgetItem(str(entry))
-            item_id.setData(Qt.UserRole, entry)
-            self.table.setItem(r, 0, item_id)
-            
-            # 1. Name (Colored by Quality)
-            name_item = QTableWidgetItem(str(name))
+            # Coloring by Quality only
             color_hex = ITEM_QUALITY_COLORS.get(quality, "#ffffff")
-            name_item.setForeground(QBrush(QColor(color_hex)))
-            self.table.setItem(r, 1, name_item)
+            text_color = QBrush(QColor(color_hex))
             
-            # 2. iLvl
-            self.table.setItem(r, 2, QTableWidgetItem(str(ilvl)))
-            
-            # 3. Req Lvl
-            self.table.setItem(r, 3, QTableWidgetItem(str(req_lvl)))
-            
-            # 4. Class/SubClass
-            # Displaying as integers for now per requirements
-            self.table.setItem(r, 4, QTableWidgetItem(f"{cls} / {subcls}"))
+            def create_item(text):
+                item = QTableWidgetItem(str(text))
+                item.setForeground(text_color)
+                # Ensure data is set for ID column
+                if str(text) == str(entry):
+                    item.setData(Qt.UserRole, entry)
+                    item.setData(Qt.UserRole + 1, True) # Valid
+                return item
 
+            self.table.setItem(r, 0, create_item(entry))
+            self.table.setItem(r, 1, create_item(name))
+            self.table.setItem(r, 2, create_item(ilvl))
+            self.table.setItem(r, 3, create_item(req_lvl))
+            self.table.setItem(r, 4, create_item(f"{cls} / {subcls}"))
+ 
         self.table.setSortingEnabled(True)
+
+    def on_selection_changed(self):
+        selected = self.table.selectedItems()
+        if not selected:
+            self.send_btn.setEnabled(False)
+            return
+            
+        row = selected[0].row()
+        id_item = self.table.item(row, 0)
+        is_valid = id_item.data(Qt.UserRole + 1)
+        
+        self.send_btn.setEnabled(bool(is_valid))
 
     def on_send_item(self):
         selected = self.table.selectedItems()
         if not selected:
             QMessageBox.warning(self, "Selection", "Please select an item first.")
             return
-            
-        # Get Item ID (stored in column 0 via UserRole or text)
+        
         row = selected[0].row()
         item_id_item = self.table.item(row, 0)
-        item_id = item_id_item.data(Qt.UserRole) # Prefer data if set, otherwise text
+        item_id = item_id_item.data(Qt.UserRole)
         
         if not item_id:
              item_id = item_id_item.text()
-
-        item_name = self.table.item(row, 1).text()
-
-        item_name = self.table.item(row, 1).text()
-
+             
         # Open Character Selector Dialog
         dialog = CharacterSelectorDialog(self.config_manager, self)
         if dialog.exec():
@@ -155,7 +139,10 @@ class ItemTab(BaseManagerTab):
 
     def send_soap_request(self, char_name, item_id):
         realm = self.config_manager.get_active_realm()
-        
+        if not realm:
+            QMessageBox.warning(self, "Error", "No active realm selected.")
+            return
+
         sc = ServerController()
         sc.set_connection_info(
             realm.get("soap_port", 7878),

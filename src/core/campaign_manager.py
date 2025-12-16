@@ -12,7 +12,11 @@ class CampaignManager:
     def __init__(self, config_manager=None):
         self.config_manager = config_manager
         self.campaigns = self.load_campaigns()
+        
+        # Load persisted active campaign ID
         self.active_campaign_id = None
+        if self.config_manager:
+              self.active_campaign_id = self.config_manager.config.get("active_campaign_id")
 
     def load_campaigns(self) -> List[Dict]:
         if not os.path.exists(self.DATA_FILE):
@@ -71,10 +75,14 @@ class CampaignManager:
 
     def set_active_campaign(self, campaign_id: str):
         self.active_campaign_id = campaign_id
+        # Persist
+        if self.config_manager:
+            self.config_manager.config["active_campaign_id"] = campaign_id
+            self.config_manager.save_config()
 
     def get_campaigns(self) -> List[Dict]:
         return self.campaigns
-
+   
     def get_reserved_ranges(self) -> List[tuple]:
         """Returns a list of (start, end) tuples for all campaigns."""
         ranges = []
@@ -89,6 +97,9 @@ class CampaignManager:
         self.campaigns = [c for c in self.campaigns if c["id"] != campaign_id]
         if self.active_campaign_id == campaign_id:
             self.active_campaign_id = None
+            if self.config_manager:
+                self.config_manager.config["active_campaign_id"] = None
+                self.config_manager.save_config()
         self.save_campaigns()
 
     def suggest_next_id_block(self, check_realm_ids: List[int] = []) -> int:

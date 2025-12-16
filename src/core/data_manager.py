@@ -23,6 +23,8 @@ class DataManager:
         self.display_infos = {} # Merged ID -> {'model': path, 'texture': skin}
         self.maps = {}
         self.model_data = {} # Raw ModelID -> Path
+        self.quest_sorts = {}
+        self.areas = {}
         
         # Load immediately or wait?
         # User says "Method load_data()... Check client_data_path... If valid parse..."
@@ -106,6 +108,28 @@ class DataManager:
                 print(f"ERROR: Failed to parse Map.dbc: {e}")
         else:
             print(f"DEBUG: Map.dbc not found at {map_path}")
+
+        # QuestSort.dbc
+        qs_path = os.path.join(client_path, "QuestSort.dbc")
+        if os.path.exists(qs_path):
+            try:
+                self.quest_sorts = self.parser.read_quest_sort_dbc(qs_path)
+                print(f"SUCCESS: Loaded {len(self.quest_sorts)} Quest Sorts.")
+            except Exception as e:
+                print(f"ERROR: Failed to parse QuestSort.dbc: {e}")
+        else:
+            print(f"DEBUG: QuestSort.dbc not found at {qs_path}")
+
+        # AreaTable.dbc
+        area_path = os.path.join(client_path, "AreaTable.dbc")
+        if os.path.exists(area_path):
+            try:
+                self.areas = self.parser.read_area_table_dbc(area_path)
+                print(f"SUCCESS: Loaded {len(self.areas)} Areas.")
+            except Exception as e:
+                print(f"ERROR: Failed to parse AreaTable.dbc: {e}")
+        else:
+            print(f"DEBUG: AreaTable.dbc not found at {area_path}")
 
     def get_map_name(self, map_id):
         return self.maps.get(map_id, f"Unknown Map ({map_id})")

@@ -184,5 +184,6 @@ class DashboardWidget(QWidget):
         self.log_stream.append("[System] Configuration reloaded.")
 
     def on_restart_clicked(self):
-        response = self.controller.send_soap_command(".server info")
+        # Sends a 10-second restart countdown with a reason
+        response = self.controller.send_soap_command('.server restart 10 "Flash restart"')
         self.log_stream.append(f"[CMD] Restart requested. Response: {response}")

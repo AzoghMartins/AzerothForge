@@ -27,7 +27,7 @@
             "bot_prefix": "RNDBOT"
         }
     ],
-    "active_realm_index": 0,
+    "active_realm_index": 1,
     "auth_database": {
         "host": "localhost",
         "port": 3306,
@@ -39,5 +39,6 @@
     "client_data_path": "/home/azoghmartins/Acore/data/dbc",
     "playerbots_enabled": true,
     "bot_prefix": "RNDBOT",
-    "wow_client_path": "/media/azoghmartins/Production/FTP/_GAMES/WoW Client"
+    "wow_client_path": "/media/azoghmartins/Production/FTP/_GAMES/WoW Client",
+    "active_campaign_id": "423e7867-596f-49c9-8e4a-ff4459011455"
 }
