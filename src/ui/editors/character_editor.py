@@ -212,6 +212,14 @@ class CharacterEditorDialog(QDialog):
                         # Debug output showed: '0 ' -> strip() gives '0' -> int('0') works.
                         
                         tier_level = int(raw_data)
+                        
+                        # Fix: If Tier is 0 but Level is 60, show Tier 1
+                        # This handles the case where the player has reached the requirement for Tier 0
+                        # but the module might store 0 until the next check/event.
+                        # Since Tier 0 is "Reach Level 60", being 60 means you are on Tier 1's objective.
+                        if tier_level == 0 and self.level_spin.value() >= 60:
+                            tier_level = 1
+
                         objective = PROGRESSION_TIERS.get(tier_level, "Unknown Objective")
                         
                         if tier_level > 17:

@@ -27,7 +27,7 @@
             "bot_prefix": "RNDBOT"
         }
     ],
-    "active_realm_index": 1,
+    "active_realm_index": 0,
     "auth_database": {
         "host": "localhost",
         "port": 3306,
