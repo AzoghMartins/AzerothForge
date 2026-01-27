@@ -2,6 +2,7 @@ import sys
 import os
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QLabel
 
 try:
     from direct.showbase.ShowBase import ShowBase
@@ -36,67 +37,57 @@ class Panda3DWidget(QWidget):
         self.is_initialized = False
         self.pivot = None
         
-        if PANDA_AVAILABLE:
-            # We defer initialization until we are sure the window has an XID
-            # usually showEvent or a slightly longer timer
+        # Only attempt GLX/Panda if display is present. A separate caller can opt-in.
+        if PANDA_AVAILABLE and os.environ.get("DISPLAY") and os.environ.get("AZF_ENABLE_EMBEDDED_PANDA") == "1":
             QTimer.singleShot(200, self.initialize_panda)
+        else:
+            self.disable_viewer()
 
     def initialize_panda(self):
         if not PANDA_AVAILABLE:
             return
-            
         if self.is_initialized:
             return
 
         # Ensure we have a valid WinId (XID)
         win_id = int(self.winId())
         if not win_id:
-            # Try again later if window not ready
             QTimer.singleShot(100, self.initialize_panda)
             return
 
-        # Prerequisite: Configure Panda
-        from panda3d.core import loadPrcFileData, WindowProperties
-        
-        # Check if ShowBase exists globally
-        if hasattr(builtins, 'base'):
-            self.ShowBase = builtins.base
-            # If we are reusing, we might need to open a NEW window or reuse existing?
-            # Creating a new window on an existing base is possible.
-        else:
-            # Force offscreen first to avoid creating a new window before we reparent
-            loadPrcFileData("", "window-type none")
-            # We create ShowBase
-            self.ShowBase = ShowBase(windowType='none') 
+        try:
+            from panda3d.core import loadPrcFileData, WindowProperties
 
-        # Open Window attached to this widget
-        props = WindowProperties()
-        props.setParentWindow(win_id)
-        props.setOrigin(0, 0)
-        props.setSize(self.width(), self.height())
-        
-        self.ShowBase.openDefaultWindow(props=props)
-        
-        if not self.ShowBase.win:
-             print("Panda3D failed to open window.")
-             return
+            # Use offscreen bootstrap first; will be reparented.
+            if hasattr(builtins, 'base'):
+                self.ShowBase = builtins.base
+            else:
+                loadPrcFileData("", "window-type none")
+                self.ShowBase = ShowBase(windowType='none')
 
-        # Setup Background (Black)
-        self.ShowBase.setBackgroundColor(0, 0, 0)
+            props = WindowProperties()
+            props.setParentWindow(win_id)
+            props.setOrigin(0, 0)
+            props.setSize(self.width(), self.height())
 
-        # Setup Scene
-        self.setup_lighting()
-        self.setup_camera()
-        
-        # Start Update Loop
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.step_panda)
-        self.timer.start(16) # ~60 FPS
-        
-        self.is_initialized = True
-        
-        # Handle Resize
-        # Overriding resizeEvent ensures Panda window scales.
+            self.ShowBase.openDefaultWindow(props=props)
+
+            if not self.ShowBase.win:
+                raise RuntimeError("Panda3D failed to open GLX window")
+
+            self.ShowBase.setBackgroundColor(0, 0, 0)
+            self.setup_lighting()
+            self.setup_camera()
+
+            self.timer = QTimer(self)
+            self.timer.timeout.connect(self.step_panda)
+            self.timer.start(16)
+
+            self.is_initialized = True
+        except Exception as e:
+            # Graceful fallback: disable viewer to avoid GLX errors (BadMatch/BadDrawable)
+            print(f"Panda3D init failed, disabling viewer: {e}")
+            self.disable_viewer()
 
     def setup_lighting(self):
         # Clear existing lights if any
@@ -503,3 +494,17 @@ class Panda3DWidget(QWidget):
             self.ShowBase.taskMgr.remove("UpdateCameraTask")
             
         self.is_initialized = False
+
+    def disable_viewer(self):
+        # Replace the viewer content with a simple label when GLX is unavailable.
+        self.is_initialized = False
+        try:
+            if self.ShowBase and self.ShowBase.win:
+                self.ShowBase.closeWindow(self.ShowBase.win)
+        except Exception:
+            pass
+        for i in reversed(range(self.layout.count())):
+            w = self.layout.itemAt(i).widget()
+            if w:
+                w.setParent(None)
+        self.layout.addWidget(QLabel("3D preview disabled (no GLX context)."), 1)

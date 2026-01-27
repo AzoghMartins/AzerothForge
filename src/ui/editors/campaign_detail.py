@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QBrush
 from src.core.campaign_manager import CampaignManager
 from src.database.db_manager import DbManager
-from src.ui.editors.npc_editor import NpcEditorDialog
+from src.ui.editors.npc_editor_window import NpcEditorWindow
 
 class CampaignDetailWindow(QMainWindow):
     def __init__(self, campaign_data, dev_realm_config, campaign_manager: CampaignManager, config_manager, parent=None):
@@ -269,11 +269,11 @@ class CampaignDetailWindow(QMainWindow):
         ranges = self.campaign_data.get("ranges", {}).get("creature", {})
         allowed_range = (ranges.get("start", 0), ranges.get("end", 0))
         
-        editor = NpcEditorDialog(self, predefined_id=next_id, mode="insert", realm_config=self.dev_realm_config, allowed_id_range=allowed_range)
+        editor = NpcEditorWindow(next_id, self.campaign_data, self.dev_realm_config, self.config_manager,
+                                 mode="insert", allowed_id_range=allowed_range, parent=self)
         if editor.exec():
-            # 3. On Save (Accepted)
             self.campaign_manager.register_content(self.campaign_data["id"], "npcs", next_id)
-            self.load_data() # Refresh all
+            self.load_data()
 
     def on_edit_npc(self):
         # 1. Get Selected Item
@@ -301,8 +301,7 @@ class CampaignDetailWindow(QMainWindow):
              # Or maybe just block editing.
              pass
         
-        editor = NpcEditorDialog(self, predefined_id=npc_id, mode="update", realm_config=self.dev_realm_config, allowed_id_range=allowed_range)
+        editor = NpcEditorWindow(npc_id, self.campaign_data, self.dev_realm_config, self.config_manager,
+                                 mode="update", allowed_id_range=allowed_range, parent=self)
         if editor.exec():
-            # 3. On Save (Accepted)
-            # Content registered logic inside editor? Or just refresh.
             self.load_data()

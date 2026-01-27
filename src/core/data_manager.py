@@ -25,6 +25,7 @@ class DataManager:
         self.model_data = {} # Raw ModelID -> Path
         self.quest_sorts = {}
         self.areas = {}
+        self.skill_lines = {}
         
         # Load immediately or wait?
         # User says "Method load_data()... Check client_data_path... If valid parse..."
@@ -131,6 +132,17 @@ class DataManager:
         else:
             print(f"DEBUG: AreaTable.dbc not found at {area_path}")
 
+        # SkillLine.dbc
+        skill_path = os.path.join(client_path, "SkillLine.dbc")
+        if os.path.exists(skill_path):
+            try:
+                self.skill_lines = self.parser.read_skillline_dbc(skill_path)
+                print(f"SUCCESS: Loaded {len(self.skill_lines)} Skill Lines.")
+            except Exception as e:
+                print(f"ERROR: Failed to parse SkillLine.dbc: {e}")
+        else:
+            print(f"DEBUG: SkillLine.dbc not found at {skill_path}")
+
     def get_map_name(self, map_id):
         return self.maps.get(map_id, f"Unknown Map ({map_id})")
 
@@ -147,6 +159,20 @@ class DataManager:
             
             if query in path.lower() or query == str(did):
                 results.append((did, path, tex))
+                if len(results) >= limit:
+                    break
+        return results
+
+    def search_skill_lines(self, query: str, limit=100) -> list:
+        """
+        Search skill lines by name or ID.
+        Returns list of (id, name).
+        """
+        query = query.lower()
+        results = []
+        for sid, name in self.skill_lines.items():
+            if query in name.lower() or query == str(sid):
+                results.append((sid, name))
                 if len(results) >= limit:
                     break
         return results

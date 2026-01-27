@@ -19,12 +19,16 @@ class QuestTab(BaseManagerTab):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         
         self.table.itemSelectionChanged.connect(self.on_selection_changed)
+
+        # Keep only Edit for now
+        self.new_btn.setVisible(False)
+        self.delete_btn.setVisible(False)
         
         # Initial Load: Removed.
 
     def on_search(self):
         # Override Base
-        search_text = self.search_bar.text().strip()
+        search_text = self.search_input.text().strip()
         
         db = DbManager.get_instance()
         active_campaign = self.campaign_manager.get_active_campaign()
@@ -99,7 +103,6 @@ class QuestTab(BaseManagerTab):
         selected = self.table.selectedItems()
         if not selected:
             self.edit_btn.setEnabled(False)
-            self.delete_btn.setEnabled(False)
             return
             
         row = selected[0].row()
@@ -107,7 +110,34 @@ class QuestTab(BaseManagerTab):
         is_valid = id_item.data(Qt.UserRole + 1)
         
         self.edit_btn.setEnabled(is_valid)
-        self.delete_btn.setEnabled(is_valid)
+
+    def on_edit(self):
+        selected = self.table.selectedItems()
+        if not selected:
+            QMessageBox.warning(self, "Selection", "Please select a quest first.")
+            return
+        row = selected[0].row()
+        id_item = self.table.item(row, 0)
+        if not id_item:
+            return
+        quest_id = int(id_item.text())
+        active_campaign = self.campaign_manager.get_active_campaign()
+        if not active_campaign:
+            QMessageBox.warning(self, "Campaign", "No active campaign loaded.")
+            return
+        from src.core.config_manager import ConfigManager
+        cm = ConfigManager()
+        dev_realm_id = active_campaign.get("dev_realm_id")
+        dev_realm_config = cm.get_active_realm()
+        if dev_realm_id:
+            realms = cm.get_realms()
+            found = next((r for r in realms if r["id"] == dev_realm_id), None)
+            if found:
+                dev_realm_config = found
+        from src.ui.editors.quest_editor import QuestEditor
+        editor = QuestEditor(quest_id, dev_realm_config, self)
+        if editor.exec():
+            self.on_search()
 
     def on_realm_changed(self):
         self.on_search()

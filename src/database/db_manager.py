@@ -919,6 +919,47 @@ class DbManager:
             print(f"DbManager Search Error (Item): {e}")
             return []
 
+    def search_quests(self, search_text="", realm_id=None, limit=2000):
+        """
+        Searches quests by ID or Title.
+        """
+        try:
+            conn = self.get_connection(realm_id=realm_id)
+            cursor = conn.cursor(dictionary=True)
+
+            if not search_text:
+                query = (
+                    f"SELECT ID, LogTitle, QuestLevel, MinLevel, RewardMoney "
+                    f"FROM quest_template ORDER BY ID DESC LIMIT {limit}"
+                )
+                args = ()
+            else:
+                is_id = search_text.isdigit()
+                if is_id:
+                    query = f"""
+                        SELECT ID, LogTitle, QuestLevel, MinLevel, RewardMoney
+                        FROM quest_template
+                        WHERE ID = %s OR LogTitle LIKE %s
+                        ORDER BY ID LIMIT {limit}
+                    """
+                    args = (int(search_text), f"%{search_text}%")
+                else:
+                    query = f"""
+                        SELECT ID, LogTitle, QuestLevel, MinLevel, RewardMoney
+                        FROM quest_template
+                        WHERE LogTitle LIKE %s
+                        ORDER BY ID LIMIT {limit}
+                    """
+                    args = (f"%{search_text}%",)
+
+            cursor.execute(query, args)
+            rows = cursor.fetchall()
+            conn.close()
+            return rows
+        except mysql.connector.Error as e:
+            print(f"DbManager Search Error (Quest): {e}")
+            return []
+
     
     # ---------------------------------------------------------
     # Expansion: Phasing & SmartAI

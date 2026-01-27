@@ -242,3 +242,33 @@ class DBCParser:
                 if name:
                     results[area_id] = name
         return results
+
+    def read_skillline_dbc(self, file_path) -> dict:
+        """
+        Reads SkillLine.dbc.
+        Returns {id: name}.
+        Field 0 = ID.
+        Field 3 = DisplayName_Lang (Offset) for 3.3.5a.
+        """
+        header, records_raw, string_block = self._parse_file(file_path)
+        if not header:
+            return {}
+
+        Record = Array(header.field_count, Int32ul)
+        Records = Array(header.record_count, Record)
+
+        try:
+            parsed_records = Records.parse(records_raw)
+        except Exception as e:
+            print(f"Error parsing {file_path}: {e}")
+            return {}
+
+        results = {}
+        for row in parsed_records:
+            if len(row) > 3:
+                skill_id = row[0]
+                name_offset = row[3]
+                name = self._get_string(name_offset, string_block)
+                if name:
+                    results[skill_id] = name
+        return results

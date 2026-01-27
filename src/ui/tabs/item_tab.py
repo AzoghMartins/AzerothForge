@@ -6,8 +6,6 @@ from PySide6.QtWidgets import (QPushButton, QTableWidgetItem, QAbstractItemView,
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QBrush
 from src.utils.game_constants import ITEM_QUALITY_COLORS
-from src.core.server_controller import ServerController
-from src.ui.components.character_selector import CharacterSelectorDialog
 
 class ItemTab(BaseManagerTab):
     update_signal = Signal(list)
@@ -27,8 +25,8 @@ class ItemTab(BaseManagerTab):
     def customize_ui(self):
         # Hide default buttons we don't use yet
         self.new_btn.setVisible(False)
-        self.edit_btn.setVisible(False)
         self.delete_btn.setVisible(False)
+        self.edit_btn.setVisible(True)
         
         # Columns: Entry ID, Name, iLvl, Req Lvl, Class/SubClass
         self.table.setColumnCount(5)
@@ -44,14 +42,8 @@ class ItemTab(BaseManagerTab):
         
         self.table.itemSelectionChanged.connect(self.on_selection_changed)
 
-        # Actions
-        self.send_btn = QPushButton("Send to Player...")
-        self.send_btn.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold;")
-        self.send_btn.clicked.connect(self.on_send_item)
-        self.action_layout.addWidget(self.send_btn)
-
     def on_search(self):
-        search_text = self.search_bar.text().strip()
+        search_text = self.search_input.text().strip()
         db = DbManager.get_instance()
         
         # Resolve Active Realm ID
@@ -108,49 +100,14 @@ class ItemTab(BaseManagerTab):
     def on_selection_changed(self):
         selected = self.table.selectedItems()
         if not selected:
-            self.send_btn.setEnabled(False)
+            self.edit_btn.setEnabled(False)
             return
             
         row = selected[0].row()
         id_item = self.table.item(row, 0)
         is_valid = id_item.data(Qt.UserRole + 1)
         
-        self.send_btn.setEnabled(bool(is_valid))
+        self.edit_btn.setEnabled(bool(is_valid))
 
-    def on_send_item(self):
-        selected = self.table.selectedItems()
-        if not selected:
-            QMessageBox.warning(self, "Selection", "Please select an item first.")
-            return
-        
-        row = selected[0].row()
-        item_id_item = self.table.item(row, 0)
-        item_id = item_id_item.data(Qt.UserRole)
-        
-        if not item_id:
-             item_id = item_id_item.text()
-             
-        # Open Character Selector Dialog
-        dialog = CharacterSelectorDialog(self.config_manager, self)
-        if dialog.exec():
-            char_name = dialog.get_selected_character()
-            if char_name:
-                self.send_soap_request(char_name, item_id)
-
-    def send_soap_request(self, char_name, item_id):
-        realm = self.config_manager.get_active_realm()
-        if not realm:
-            QMessageBox.warning(self, "Error", "No active realm selected.")
-            return
-
-        sc = ServerController()
-        sc.set_connection_info(
-            realm.get("soap_port", 7878),
-            realm.get("soap_user", "admin"),
-            realm.get("soap_pass", "admin")
-        )
-        
-        command = f'.send items {char_name} "GM Delivery" "Requested Item" {item_id}'
-        response = sc.send_soap_command(command)
-        
-        QMessageBox.information(self, "Server Response", response)
+    def on_edit(self):
+        QMessageBox.information(self, "Coming Soon", "Item editor not implemented yet.")
