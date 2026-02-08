@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt, Signal
 from src.core.data_manager import DataManager
 from src.core.config_manager import ConfigManager
 from src.database.db_manager import DbManager
+from src.ui.components.model_viewer import Panda3DWidget, PANDA_AVAILABLE
 from src.ui.components.selectors import SmartSelector, BitmaskSelector, SearchDialog
 # Fallback flag dictionaries for bitmask selectors
 # These can be expanded later; using common core bits.
@@ -404,12 +405,16 @@ class NpcEditorWindow(QDialog):
 
         self.model_results = QListWidget(); self.model_results.itemDoubleClicked.connect(self.apply_search_result)
         left.addWidget(self.model_results, 1)
+        self.display_list.currentItemChanged.connect(lambda _c, _p: self.load_current_display_into_viewer())
 
         # Viewer side
         viewer_box = QVBoxLayout()
-        # Disable embedded Panda3D to avoid GLX BadMatch on systems without a stable context.
-        self.viewer = None
-        viewer_box.addWidget(QLabel("Embedded preview disabled to avoid GLX issues.\nUse Full Viewer instead."), 1)
+        if PANDA_AVAILABLE:
+            self.viewer = Panda3DWidget()
+            viewer_box.addWidget(self.viewer, 1)
+        else:
+            self.viewer = None
+            viewer_box.addWidget(QLabel("Panda3D not available. Install panda3d to preview here."), 1)
         open_full = QPushButton("Open Full Viewer")
         open_full.clicked.connect(self.open_full_viewer)
         viewer_box.addWidget(open_full)
@@ -763,6 +768,8 @@ class NpcEditorWindow(QDialog):
             # Models
             for row in safe_exec("SELECT * FROM creature_template_model WHERE CreatureID=%s ORDER BY Idx", (self.entry_id,)):
                 self.display_list.addItem(f"{row['CreatureDisplayID']}|{row.get('DisplayScale',1.0)}|{row.get('Probability',1.0)}")
+            if self.display_list.count() > 0:
+                self.display_list.setCurrentRow(0)
 
             # Equip
             equip_entry_col = self._col("creature_equip_template", "CreatureID", "entry")
@@ -893,7 +900,8 @@ class NpcEditorWindow(QDialog):
         did, path, tex = item.data(Qt.UserRole)
         self.display_list.addItem(f"{did}|1.0|1.0")
         self.display_list.setCurrentRow(self.display_list.count()-1)
-        self.load_model(path, tex)
+        info = self.data.display_infos.get(did, {})
+        self.load_model(path, tex, display_id=did, extra_id=info.get('extra_id'), display_extra=info.get('extra', {}))
 
     def load_current_display_into_viewer(self):
         if not self.viewer:
@@ -909,16 +917,22 @@ class NpcEditorWindow(QDialog):
             return
         info = self.data.display_infos.get(did_int)
         if info:
-            self.load_model(info.get('model', ''), info.get('texture', ''))
+            self.load_model(
+                info.get('model', ''),
+                info.get('texture', ''),
+                display_id=did_int,
+                extra_id=info.get('extra_id'),
+                display_extra=info.get('extra', {})
+            )
 
     def open_full_viewer(self):
         from src.ui.tools.model_viewer_window import ModelViewerWindow
         win = ModelViewerWindow(self)
         win.show()
 
-    def load_model(self, path, tex):
+    def load_model(self, path, tex, display_id=None, extra_id=None, display_extra=None):
         if self.viewer:
-            self.viewer.load_model(path, texture_path=tex)
+            self.viewer.load_model(path, texture_path=tex, display_id=display_id, extra_id=extra_id, display_extra=display_extra)
 
     # ------------------------------------------------------------------ SQL helpers
     def collect_tables(self):

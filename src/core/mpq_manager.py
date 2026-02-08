@@ -1,5 +1,6 @@
 import os
 import mpyq
+import re
 from typing import Optional, List
 
 class MpqManager:
@@ -9,6 +10,7 @@ class MpqManager:
         if not cls._instance:
             cls._instance = super(MpqManager, cls).__new__(cls)
             cls._instance.archives = []
+            cls._instance.archive_indexes = []
             cls._instance.client_path = None
         return cls._instance
 
@@ -29,82 +31,99 @@ class MpqManager:
             
         self.client_path = client_path
         self.archives = []
+        self.archive_indexes = []
         
         data_path = os.path.join(client_path, "Data")
         if not os.path.exists(data_path):
             print(f"Error: Data folder not found at {data_path}")
             return
 
-        # Priority List (Highest to Lowest)
-        # Note: Actual priority in client is determined by alphanumeric sorting of patch-*.MPQ usually, 
-        # but hardcoding known WotLK structure is fine for this task.
-        priorities = [
-            "patch-3.MPQ",
-            "patch-2.MPQ",
-            "patch.MPQ",
-            "lichking.MPQ",
-            "expansion.MPQ",
-            "common.MPQ"
-        ]
-        
-        # Scan for Locales (enUS, enGB, etc)
-        # They should be higher priority than Base but lower than patches? 
-        # Usually: patch-enUS-3.MPQ > locale-enUS.MPQ > ...
-        # Let's check subfolders.
-        locale_archives = []
-        possible_locales = ["enUS", "enGB", "deDE", "frFR", "esES", "ruRU"]
-        
-        for loc in possible_locales:
-            loc_path = os.path.join(data_path, loc)
-            if os.path.isdir(loc_path):
-                print(f"DEBUG: Found Locale Directory: {loc}")
-                # Load locale specific MPQs
-                # patch-enUS-3.MPQ
-                # patch-enUS-2.MPQ
-                # locale-enUS.MPQ
-                
-                # We prepend to priorities? Or load immediately?
-                # Let's load them into a list and prepend to self.archives later?
-                # Actually, simpler to just add them to the 'priorities' list if we have full paths?
-                # But priorities list assumes root Data folder.
-                
-                # Better: Load them here and add to self.archives
-                loc_files = [
-                    f"patch-{loc}-3.MPQ",
-                    f"patch-{loc}-2.MPQ",
-                    f"locale-{loc}.MPQ"
-                ]
-                
-                for lf in loc_files:
-                    full_loc_mpq = os.path.join(loc_path, lf)
-                    if os.path.exists(full_loc_mpq):
-                        try:
-                            archive = mpyq.MPQArchive(full_loc_mpq)
-                            self.archives.append(archive) # Append? Or Prepend?
-                            # If we append, they are lower priority than what we already loaded?
-                            # Wait, we haven't loaded priorities yet.
-                            print(f"DEBUG: Loading Locale Archive: {lf}")
-                            locale_archives.append(archive)
-                        except Exception as e:
-                            print(f"Failed to load {lf}: {e}")
+        mpq_paths = []
+        for root, _dirs, files in os.walk(data_path):
+            for filename in files:
+                if filename.lower().endswith(".mpq"):
+                    mpq_paths.append(os.path.join(root, filename))
 
-        # Add Locale archives to main list (High Priority for now)
-        self.archives.extend(locale_archives)
-        
-        # Load archives
-        for filename in priorities:
-            chk_path = os.path.join(data_path, filename)
-            if os.path.exists(chk_path):
-                try:
-                    archive = mpyq.MPQArchive(chk_path)
-                    self.archives.append(archive)
-                    print(f"Loaded MPQ: {filename}")
-                except Exception as e:
-                    print(f"Failed to load {filename}: {e}")
-            else:
-                # Also check common/ patches which might be loose? 
-                # WotLK structure is usually Data/common.MPQ etc.
-                pass
+        if not mpq_paths:
+            print("No MPQ archives found.")
+            return
+
+        def mpq_sort_key(path: str):
+            base = os.path.basename(path).lower()
+            is_patch = 0 if base.startswith("patch") else 1
+            locale_bias = 0 if os.path.dirname(path).lower() != data_path.lower() else 1
+            nums = [int(n) for n in re.findall(r"(\d+)", base)]
+            patch_num = nums[-1] if nums else 0
+            return (is_patch, locale_bias, -patch_num, base)
+
+        mpq_paths = sorted(set(mpq_paths), key=mpq_sort_key)
+
+        for full_path in mpq_paths:
+            try:
+                archive = mpyq.MPQArchive(full_path)
+                self.archives.append(archive)
+                self.archive_indexes.append(self._build_archive_index(archive))
+                print(f"Loaded MPQ: {os.path.relpath(full_path, data_path)}")
+            except Exception as e:
+                print(f"Failed to load {full_path}: {e}")
+
+    def _normalize_path(self, p: str) -> str:
+        return p.replace('/', '\\').lower()
+
+    def _build_archive_index(self, archive) -> dict:
+        idx = {}
+        files = getattr(archive, 'files', []) or []
+        for filename_bytes in files:
+            try:
+                filename = filename_bytes.decode('utf-8', errors='ignore')
+            except Exception:
+                continue
+            if not filename:
+                continue
+            idx[self._normalize_path(filename)] = filename
+        return idx
+
+    def _candidate_paths(self, internal_path: str) -> List[str]:
+        path = internal_path.strip()
+        candidates = []
+        base = path.replace('/', '\\')
+        variants = {
+            base,
+            base.lower(),
+            base.upper(),
+            base.replace('\\', '/'),
+            base.lower().replace('\\', '/'),
+        }
+        for v in variants:
+            candidates.append(v)
+            # M2/MDX fallback in both directions
+            if v.lower().endswith('.m2'):
+                candidates.append(v[:-3] + '.mdx')
+            elif v.lower().endswith('.mdx'):
+                candidates.append(v[:-4] + '.m2')
+        # keep order, drop dupes
+        out = []
+        seen = set()
+        for c in candidates:
+            n = self._normalize_path(c)
+            if n in seen:
+                continue
+            seen.add(n)
+            out.append(c)
+        return out
+
+    def resolve_file_path(self, internal_path: str) -> Optional[str]:
+        """
+        Resolves an internal path to the exact indexed path in loaded MPQs.
+        """
+        if not self.archives:
+            return None
+        for candidate in self._candidate_paths(internal_path):
+            norm = self._normalize_path(candidate)
+            for idx in self.archive_indexes:
+                if norm in idx:
+                    return idx[norm]
+        return None
 
     def read_file(self, internal_path: str) -> Optional[bytes]:
         """
@@ -115,26 +134,19 @@ class MpqManager:
         if not self.archives:
             print("Warning: No MPQ archives loaded.")
             return None
-            
-        # Generate permutations to beat the Hash Lookup
-        candidates = [
-            internal_path,                                      # As requested
-            internal_path.replace('/', '\\'),                   # Backslashes (WoW Standard)
-            internal_path.replace('\\', '/'),                   # Forward Slashes
-            internal_path.lower(),                              # Lowercase
-            internal_path.upper(),                              # Uppercase
-            internal_path.lower().replace('/', '\\'),           # Lower + Backslash
-        ]
-        
-        for archive in self.archives:
+
+        candidates = self._candidate_paths(internal_path)
+
+        for archive, idx in zip(self.archives, self.archive_indexes):
             for candidate in candidates:
                 try:
-                    # Try to read
-                    file_data = archive.read_file(candidate)
+                    norm = self._normalize_path(candidate)
+                    actual = idx.get(norm, candidate)
+                    file_data = archive.read_file(actual)
                     if file_data:
-                        print(f"DEBUG: Found {internal_path} as {candidate} in archive.")
+                        print(f"DEBUG: Found {internal_path} as {actual} in archive.")
                         return file_data
-                except:
+                except Exception:
                     pass
         
         print(f"DEBUG: Failed to find {internal_path} in any archive.")

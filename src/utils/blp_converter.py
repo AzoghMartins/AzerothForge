@@ -40,64 +40,116 @@ class BlpConverter:
             print("No Mipmap 0 found.")
             return None
             
-        if _type == 1:
-            # Compressed (DXT)
-            # Logic:
-            # AlphaDepth 0 -> DXT1
-            # AlphaDepth 1 or 8 (usually with AlphaType 1/7) -> DXT3/5
-            
-            dxt_format = "DXT1" # Default
-            
-            if alpha_depth > 0:
-                if alpha_type == 7: # Interpolated Alpha
-                    dxt_format = "DXT5"
-                else:
-                    dxt_format = "DXT3" # Explicit Alpha or AlphaDepth=1
-            else:
-                 dxt_format = "DXT1"
+        # BLP2 decoding depends on `compression` field, not `_type`.
+        # compression: 1=palette, 2=DXT, 3=raw BGRA.
+        if compression == 2:
+            dxt_format = "DXT1"
+            if alpha_depth >= 8:
+                dxt_format = "DXT5" if alpha_type in (7, 8) else "DXT3"
+            elif alpha_depth in (1, 4):
+                dxt_format = "DXT3"
 
-            # Check alpha bit depth vs compression
-            # DXT1 = 0 alpha
-            # DXT3 = 4 bit explicit alpha (AlphaDepth 1 or 4?)
-            # DXT5 = interpolated alpha (AlphaDepth 8)
-            
-            # If we detect mismatch, we might need to trust AlphaType more?
-            # but let's stick to this logic for now.
-            
+            # Correct obviously mismatched headers using block-size math.
+            block_count = ((width + 3) // 4) * ((height + 3) // 4)
+            expected_dxt1 = block_count * 8
+            expected_dxt3_5 = block_count * 16
+
+            if dxt_format == "DXT1" and mip0_size == expected_dxt3_5:
+                dxt_format = "DXT5" if alpha_type in (7, 8) else "DXT3"
+                print(
+                    "BLP header mismatch: promoted DXT1 -> "
+                    f"{dxt_format} based on mip size ({mip0_size})."
+                )
+            elif dxt_format in ("DXT3", "DXT5") and mip0_size == expected_dxt1:
+                dxt_format = "DXT1"
+                print(
+                    "BLP header mismatch: demoted to DXT1 based on mip size "
+                    f"({mip0_size})."
+                )
+
             raw_data = blp_data[mip0_offset : mip0_offset + mip0_size]
             return (width, height, raw_data, dxt_format)
 
-        elif _type == 2:
-            # Paletted (Uncompressed 8-bit indices + Palette)
-            # Palette is at 148 (immediately after header blocks)
-            # Palette size = 256 * 4 bytes = 1024 bytes
+        if compression == 1:
+            # Paletted 8-bit (indices + optional packed alpha stream).
             palette_offset = 148
             palette_bytes = blp_data[palette_offset : palette_offset + 1024]
-            
-            # Parse Palette -> List of (r, g, b, a) or similar
-            # BLP palette is usually BGRA (Blue, Green, Red, Alpha)
+            if len(palette_bytes) < 1024:
+                print("Invalid BLP palette data.")
+                return None
+
             palette = []
             for i in range(256):
-                 b = palette_bytes[i*4 + 0]
-                 g = palette_bytes[i*4 + 1]
-                 r = palette_bytes[i*4 + 2]
-                 a = palette_bytes[i*4 + 3]
-                 palette.append((r, g, b, a))
-                 
-            # Pixel indices are at mip0_offset
-            indices = blp_data[mip0_offset : mip0_offset + mip0_size]
-            
-            # Construct RGBA
-            rgba_data = bytearray()
-            for index in indices:
-                r, g, b, a = palette[index]
-                rgba_data.append(r)
-                rgba_data.append(g)
-                rgba_data.append(b)
-                rgba_data.append(a)
-                
+                b = palette_bytes[i * 4 + 0]
+                g = palette_bytes[i * 4 + 1]
+                r = palette_bytes[i * 4 + 2]
+                a = palette_bytes[i * 4 + 3]
+                palette.append((r, g, b, a))
+
+            pixel_count = width * height
+            mip_blob = blp_data[mip0_offset : mip0_offset + mip0_size]
+            indices = mip_blob[:pixel_count]
+            if len(indices) < pixel_count:
+                print("Invalid paletted mip index data.")
+                return None
+            alpha_blob = mip_blob[pixel_count:]
+
+            def alpha_at(i, palette_alpha):
+                if alpha_depth == 0:
+                    # Most 0-bit alpha textures should be fully opaque.
+                    return 255
+                if alpha_depth == 1:
+                    byte_idx = i // 8
+                    if byte_idx >= len(alpha_blob):
+                        return 255
+                    bit = (alpha_blob[byte_idx] >> (i % 8)) & 0x1
+                    return 255 if bit else 0
+                if alpha_depth == 4:
+                    byte_idx = i // 2
+                    if byte_idx >= len(alpha_blob):
+                        return 255
+                    nibble = (alpha_blob[byte_idx] >> (4 * (i % 2))) & 0xF
+                    return nibble * 17
+                if alpha_depth == 8:
+                    if i >= len(alpha_blob):
+                        return 255
+                    return alpha_blob[i]
+                return palette_alpha
+
+            rgba_data = bytearray(pixel_count * 4)
+            out = 0
+            for i, index in enumerate(indices):
+                r, g, b, pa = palette[index]
+                a = alpha_at(i, pa)
+                rgba_data[out + 0] = r
+                rgba_data[out + 1] = g
+                rgba_data[out + 2] = b
+                rgba_data[out + 3] = a
+                out += 4
+
             return (width, height, bytes(rgba_data), "RGBA")
-            
-        else:
-            print(f"Unsupported BLP Type: {_type}")
-            return None
+
+        if compression == 3:
+            # Uncompressed BGRA.
+            pixel_count = width * height
+            raw = blp_data[mip0_offset : mip0_offset + (pixel_count * 4)]
+            if len(raw) < pixel_count * 4:
+                print("Invalid BGRA mip data.")
+                return None
+            rgba_data = bytearray(pixel_count * 4)
+            for i in range(pixel_count):
+                b = raw[i * 4 + 0]
+                g = raw[i * 4 + 1]
+                r = raw[i * 4 + 2]
+                a = raw[i * 4 + 3]
+                rgba_data[i * 4 + 0] = r
+                rgba_data[i * 4 + 1] = g
+                rgba_data[i * 4 + 2] = b
+                rgba_data[i * 4 + 3] = a
+            return (width, height, bytes(rgba_data), "RGBA")
+
+        print(
+            "Unsupported BLP compression: "
+            f"{compression} (type={_type}, alpha_depth={alpha_depth}, alpha_type={alpha_type})"
+        )
+        return None

@@ -105,10 +105,13 @@ class M2Parser:
             return None
             
         # Header Offsets (WotLK)
-        # n_textures: uint32 at 0x54
-        # ofs_textures: uint32 at 0x58
-        n_textures = struct.unpack('<I', m2_bytes[0x54:0x58])[0]
-        ofs_textures = struct.unpack('<I', m2_bytes[0x58:0x5C])[0]
+        # n_textures: uint32 at 0x50
+        # ofs_textures: uint32 at 0x54
+        n_textures = struct.unpack('<I', m2_bytes[0x50:0x54])[0]
+        ofs_textures = struct.unpack('<I', m2_bytes[0x54:0x58])[0]
+        # Guard against corrupt offsets/counts.
+        if n_textures > 4096:
+            return None
         
         if n_textures == 0 or ofs_textures == 0:
             return None
@@ -130,6 +133,11 @@ class M2Parser:
             if tex_type == 0 and len_filename > 1 and ofs_filename > 0:
                 # Read Filename
                 try:
+                    end = ofs_filename + len_filename
+                    if end > len(m2_bytes):
+                        current_offset += stride
+                        continue
+                    raw_name = m2_bytes[ofs_filename:end]
                     # Strings in M2 are NOT necessarily null-terminated in the block, 
                     # but 'len_filename' includes null terminator usually? Or just length.
                     # We read len_filename bytes.
@@ -144,6 +152,67 @@ class M2Parser:
             current_offset += stride
             
         return None
+
+    def parse_texture_defs(self, m2_bytes: bytes) -> list:
+        """
+        Parses all M2 texture definitions.
+        Returns a list of dicts with type/flags/name.
+        """
+        if not m2_bytes or len(m2_bytes) < 0x58:
+            return []
+
+        n_textures = struct.unpack('<I', m2_bytes[0x50:0x54])[0]
+        ofs_textures = struct.unpack('<I', m2_bytes[0x54:0x58])[0]
+        if n_textures == 0 or ofs_textures == 0 or n_textures > 4096:
+            return []
+
+        defs = []
+        stride = 16
+        for i in range(n_textures):
+            off = ofs_textures + (i * stride)
+            if off + stride > len(m2_bytes):
+                break
+            tex_type, tex_flags, len_filename, ofs_filename = struct.unpack('<4I', m2_bytes[off:off + stride])
+            name = ""
+            if len_filename > 0 and ofs_filename > 0 and (ofs_filename + len_filename) <= len(m2_bytes):
+                raw_name = m2_bytes[ofs_filename:ofs_filename + len_filename]
+                name = raw_name.decode('utf-8', errors='ignore').split('\x00')[0]
+
+            defs.append({
+                "index": i,
+                "type": int(tex_type),
+                "flags": int(tex_flags),
+                "name": name,
+            })
+        return defs
+
+    def parse_render_flags(self, m2_bytes: bytes) -> list:
+        """
+        Parses M2 render-flag table.
+        Returns list of {'index': int, 'flags': int, 'blend_mode': int}.
+        """
+        if not m2_bytes or len(m2_bytes) < 0x78:
+            return []
+
+        # WotLK MD20 header: 0x70 = nRenderFlags, 0x74 = ofsRenderFlags.
+        n_flags = struct.unpack('<I', m2_bytes[0x70:0x74])[0]
+        ofs_flags = struct.unpack('<I', m2_bytes[0x74:0x78])[0]
+        if n_flags == 0 or ofs_flags == 0 or n_flags > 1024:
+            return []
+
+        out = []
+        stride = 4
+        for i in range(n_flags):
+            off = ofs_flags + (i * stride)
+            if off + stride > len(m2_bytes):
+                break
+            flags, blend = struct.unpack('<HH', m2_bytes[off:off + stride])
+            out.append({
+                "index": i,
+                "flags": int(flags),
+                "blend_mode": int(blend),
+            })
+        return out
 
     def get_internal_texture_list(self, m2_bytes: bytes) -> list:
         """
@@ -166,3 +235,41 @@ class M2Parser:
                 
         # Deduplicate
         return list(set(results))
+
+    def parse_attachments(self, m2_bytes: bytes) -> list:
+        """
+        Parses M2 attachment points.
+        Returns a list of {'id': int, 'bone': int, 'pos': (x, y, z)}.
+        """
+        if not m2_bytes or len(m2_bytes) < 0xF8:
+            return []
+
+        # WotLK (3.3.5a) MD20 header offsets.
+        n_attachments = struct.unpack('<I', m2_bytes[0xF0:0xF4])[0]
+        ofs_attachments = struct.unpack('<I', m2_bytes[0xF4:0xF8])[0]
+
+        if n_attachments == 0 or ofs_attachments == 0:
+            return []
+        if n_attachments > 1024:
+            return []
+
+        # CAttachment is 40 bytes in 3.3.5a.
+        stride = 40
+        out = []
+        for i in range(n_attachments):
+            off = ofs_attachments + (i * stride)
+            end = off + stride
+            if end > len(m2_bytes):
+                break
+
+            attach_id = struct.unpack('<I', m2_bytes[off:off + 4])[0]
+            bone = struct.unpack('<I', m2_bytes[off + 4:off + 8])[0]
+            pos = struct.unpack('<3f', m2_bytes[off + 8:off + 20])
+
+            out.append({
+                "id": int(attach_id),
+                "bone": int(bone),
+                "pos": (float(pos[0]), float(pos[1]), float(pos[2]))
+            })
+
+        return out
